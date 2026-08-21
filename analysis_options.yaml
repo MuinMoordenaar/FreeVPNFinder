@@ -1,0 +1,13 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - windows/**
+
+linter:
+  rules:
+    avoid_renaming_method_parameters: false
+    curly_braces_in_flow_control_structures: false
+    unnecessary_underscores: false
+    use_null_aware_elements: false
