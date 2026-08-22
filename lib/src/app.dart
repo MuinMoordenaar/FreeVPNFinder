@@ -68,7 +68,7 @@ class Dashboard extends StatefulWidget {
 class _DashboardState extends State<Dashboard> {
   int page = 0;
   static const nav = [
-    (0, Icons.shield_rounded, 'Connect'),
+    (3, Icons.tune_rounded, 'Settings'),
     (1, Icons.radar_rounded, 'Sources'),
     (2, Icons.add_link_rounded, 'Profiles'),
     (4, Icons.terminal_rounded, 'Logs'),
@@ -102,10 +102,10 @@ class _DashboardState extends State<Dashboard> {
                       child: Column(
                         children: [
                           _NavItem(
-                            icon: Icons.tune_rounded,
-                            label: 'Settings',
-                            selected: page == 3,
-                            onTap: () => setState(() => page = 3),
+                            icon: Icons.shield_rounded,
+                            label: 'Connect',
+                            selected: page == 0,
+                            onTap: () => setState(() => page = 0),
                           ),
                           const SizedBox(height: 16),
                           for (var i = 0; i < nav.length; i++)
@@ -991,7 +991,7 @@ class _ConnectButtonState extends State<_ConnectButton>
                   child: AnimatedScale(
                     duration: const Duration(milliseconds: 420),
                     scale: widget.active ? 1.08 : .92,
-                    child: _BrandMark(size: 104, inverted: widget.active),
+                    child: _BrandMark(size: 116, inverted: widget.active),
                   ),
                 ),
                 if (widget.busy)
