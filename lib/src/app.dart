@@ -291,7 +291,8 @@ class _Home extends StatelessWidget {
                 flex: 2,
                 child: Column(
                   children: [
-                    Expanded(
+                    SizedBox(
+                      height: 154,
                       child: _InfoCard(
                         title: 'CONNECTION',
                         icon: Icons.speed_rounded,
@@ -311,7 +312,8 @@ class _Home extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 14),
-                    Expanded(
+                    SizedBox(
+                      height: 216,
                       child: _InfoCard(
                         title: 'FAILOVER',
                         icon: Icons.swap_horiz_rounded,
@@ -326,7 +328,7 @@ class _Home extends StatelessWidget {
                                 ? 'On'
                                 : 'Off',
                           ),
-                          const Spacer(),
+                          const SizedBox(height: 18),
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton.icon(
@@ -340,6 +342,41 @@ class _Home extends StatelessWidget {
                         ],
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: c.installingUpdate ? null : c.updateAction,
+                        icon: c.checkingUpdate || c.installingUpdate
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.system_update_alt_rounded),
+                        label: Text(
+                          c.availableUpdate == null
+                              ? 'Update'
+                              : 'Install ${c.availableUpdate!.version}',
+                        ),
+                      ),
+                    ),
+                    if (c.updateMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          c.updateMessage!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white38,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
