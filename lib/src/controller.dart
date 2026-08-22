@@ -29,13 +29,15 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   int tested = 0;
   Timer? _healthTimer;
   Timer? _backgroundTimer;
+  Timer? _nodesSaveTimer;
   DateTime? _lastFailover;
   int _qualityFailures = 0;
   bool _cancelRequested = false;
   bool _operationInFlight = false;
   bool _shuttingDown = false;
   bool _backupRefreshRunning = false;
-  final _backgroundQueue = <VpnNode>[];
+  int _backgroundScanIndex = 0;
+  final _backgroundGroupHistory = <String>[];
 
   bool get connected =>
       phase == AppPhase.connected || phase == AppPhase.degraded;
@@ -231,7 +233,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     }
     if (fresh.isNotEmpty) {
       nodes = repository.deduplicate(fresh, nodes);
-      _backgroundQueue.clear();
+      _resetBackgroundScan();
     }
     await storage.saveNodes(nodes);
     _log('${nodes.length} unique nodes available');
@@ -330,29 +332,72 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
         await _persistPool();
         notifyListeners();
       }
-      await storage.saveNodes(nodes);
+      _scheduleNodesSave();
     } finally {
       _backupRefreshRunning = false;
     }
-    await storage.saveNodes(nodes);
     await _persistPool();
   }
 
+  void _scheduleNodesSave() {
+    if (_nodesSaveTimer != null || _shuttingDown) return;
+    _nodesSaveTimer = Timer(const Duration(seconds: 15), () {
+      _nodesSaveTimer = null;
+      unawaited(storage.saveNodes(nodes));
+    });
+  }
+
   VpnNode? _nextBackgroundCandidate({VpnNode? exclude}) {
-    while (true) {
-      if (_backgroundQueue.isEmpty) {
-        _backgroundQueue.addAll(_backgroundCandidates());
-      }
-      if (_backgroundQueue.isEmpty) return null;
-      final node = _backgroundQueue.removeAt(0);
+    if (nodes.isEmpty) return null;
+    VpnNode? fallback;
+    String? fallbackGroup;
+    final limit = nodes.length < 256 ? nodes.length : 256;
+    for (var offset = 0; offset < limit; offset++) {
+      final index = (_backgroundScanIndex + offset) % nodes.length;
+      final node = nodes[index];
       if (node.fingerprint == exclude?.fingerprint ||
           node.fingerprint == activeNode?.fingerprint ||
           backups.any((backup) => backup.fingerprint == node.fingerprint) ||
           !_backgroundEligible(node)) {
         continue;
       }
-      return node;
+      final group = '${node.sourceId}:${node.protocol}';
+      final nodePriority = _backgroundPriority(node);
+      final fallbackPriority = fallback == null
+          ? 1 << 30
+          : _backgroundPriority(fallback!);
+      final preferred =
+          fallback == null ||
+          nodePriority < fallbackPriority ||
+          (nodePriority == fallbackPriority &&
+              (node.latency ?? 1 << 30) < (fallback!.latency ?? 1 << 30));
+      if (preferred) {
+        fallback = node;
+        fallbackGroup = group;
+      }
+      if (!_backgroundGroupHistory.contains(group)) {
+        _backgroundScanIndex = (index + 1) % nodes.length;
+        _backgroundGroupHistory.add(group);
+        if (_backgroundGroupHistory.length > 16) {
+          _backgroundGroupHistory.removeAt(0);
+        }
+        return node;
+      }
     }
+    if (fallback != null) {
+      final index = nodes.indexOf(fallback);
+      _backgroundScanIndex = (index + 1) % nodes.length;
+      if (fallbackGroup != null &&
+          !_backgroundGroupHistory.contains(fallbackGroup)) {
+        _backgroundGroupHistory.add(fallbackGroup);
+      }
+    }
+    return fallback;
+  }
+
+  void _resetBackgroundScan() {
+    _backgroundScanIndex = 0;
+    _backgroundGroupHistory.clear();
   }
 
   void _startBackgroundDiscovery() {
@@ -362,46 +407,6 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
       (_) => unawaited(_fillBackups(exclude: activeNode)),
     );
     unawaited(_fillBackups(exclude: activeNode));
-  }
-
-  Iterable<VpnNode> _backgroundCandidates() sync* {
-    final groups = <String, List<VpnNode>>{};
-    for (final node in nodes) {
-      if (!_backgroundEligible(node) ||
-          node.fingerprint == activeNode?.fingerprint ||
-          backups.any((backup) => backup.fingerprint == node.fingerprint)) {
-        continue;
-      }
-      groups
-          .putIfAbsent('${node.sourceId}:${node.protocol}', () => [])
-          .add(node);
-    }
-
-    final queues = groups.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
-    for (final entry in queues) {
-      entry.value.sort((a, b) {
-        final checked = (a.lastCheckedAt ?? DateTime(0)).compareTo(
-          b.lastCheckedAt ?? DateTime(0),
-        );
-        final priority = _backgroundPriority(a)
-            .compareTo(_backgroundPriority(b));
-        if (priority != 0) return priority;
-        final latency = (a.latency ?? 1 << 30).compareTo(b.latency ?? 1 << 30);
-        if (latency != 0) return latency;
-        return checked != 0 ? checked : a.fingerprint.compareTo(b.fingerprint);
-      });
-    }
-
-    var remaining = true;
-    while (remaining) {
-      remaining = false;
-      for (final entry in queues) {
-        if (entry.value.isEmpty) continue;
-        remaining = true;
-        yield entry.value.removeAt(0);
-      }
-    }
   }
 
   bool _backgroundEligible(VpnNode node) {
@@ -561,7 +566,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   Future<void> saveSettings() async {
     await storage.saveSettings(settings);
     _sortAndTrimBackups();
-    _backgroundQueue.clear();
+    _resetBackgroundScan();
     await _persistPool();
     _startHealthMonitor();
     _startBackgroundDiscovery();
@@ -600,8 +605,10 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     if (_shuttingDown) return;
     _shuttingDown = true;
     _backgroundTimer?.cancel();
+    _nodesSaveTimer?.cancel();
     try {
       await disconnect();
+      await storage.saveNodes(nodes);
       trayManager.removeListener(this);
       windowManager.removeListener(this);
       await trayManager.destroy();

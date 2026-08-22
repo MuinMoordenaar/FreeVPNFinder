@@ -18,6 +18,7 @@ class SingBoxEngine {
   final LocalStorage storage;
   final configBuilder = SingBoxConfigBuilder();
   Process? _process;
+  final _probeProcesses = <Process>{};
   int proxyPort = 2080;
   ConnectionMode? activeMode;
 
@@ -37,6 +38,7 @@ class SingBoxEngine {
 
   Future<void> start(VpnNode node, ConnectionMode mode) async {
     await stop();
+    proxyPort = await _findFreePort();
     final config = File(
       '${storage.root.path}${Platform.pathSeparator}active-config.json',
     );
@@ -52,25 +54,33 @@ class SingBoxEngine {
     ], runInShell: false);
     if (checked.exitCode != 0)
       throw StateError('Invalid sing-box config: ${checked.stderr}');
-    _process = await Process.start(
+    final process = await Process.start(
       binary,
       ['run', '-c', config.path],
       runInShell: false,
       mode: ProcessStartMode.normal,
     );
-    _process!.stdout
+    _process = process;
+    final startupErrors = <String>[];
+    process.stdout
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .listen((e) => storage.appendLog('core: $e'));
-    _process!.stderr
+    process.stderr
         .transform(utf8.decoder)
         .transform(const LineSplitter())
-        .listen((e) => storage.appendLog('core error: $e'));
-    _process!.exitCode.then((_) {
-      _process = null;
+        .listen((e) {
+          startupErrors.add(e);
+          storage.appendLog('core error: $e');
+        });
+    process.exitCode.then((_) {
+      if (identical(_process, process)) _process = null;
     });
     await Future<void>.delayed(const Duration(milliseconds: 650));
-    if (_process == null) throw StateError('sing-box stopped during startup');
+    if (_process == null) {
+      final detail = startupErrors.isEmpty ? '' : ': ${startupErrors.last}';
+      throw StateError('sing-box stopped during startup$detail');
+    }
     activeMode = mode;
     if (mode == ConnectionMode.systemProxy) await _setSystemProxy(true);
   }
@@ -88,6 +98,10 @@ class SingBoxEngine {
         process.kill();
       }
     }
+    for (final probe in List<Process>.from(_probeProcesses)) {
+      probe.kill(ProcessSignal.sigterm);
+    }
+    _probeProcesses.clear();
   }
 
   Future<ProbeResult> checkActive({
@@ -116,16 +130,32 @@ class SingBoxEngine {
       if (checked.exitCode != 0)
         return ProbeResult(false, 0, '${checked.stderr}');
       process = await Process.start(binary, ['run', '-c', config.path]);
+      _probeProcesses.add(process);
       await Future<void>.delayed(const Duration(milliseconds: 350));
       return await _httpProbe(port, const Duration(seconds: 7));
     } catch (e) {
       return ProbeResult(false, 0, '$e');
     } finally {
-      process?.kill();
+      if (process != null) {
+        _probeProcesses.remove(process);
+        process.kill(ProcessSignal.sigterm);
+        try {
+          await process.exitCode.timeout(const Duration(seconds: 1));
+        } catch (_) {
+          process.kill();
+        }
+      }
       try {
         await config.delete();
       } catch (_) {}
     }
+  }
+
+  Future<int> _findFreePort() async {
+    final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final port = socket.port;
+    await socket.close();
+    return port;
   }
 
   Future<ProbeResult> _httpProbe(int port, Duration timeout) async {

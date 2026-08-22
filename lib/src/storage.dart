@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:path_provider/path_provider.dart';
 
@@ -43,7 +44,15 @@ class LocalStorage {
   Future<void> saveSettings(AppSettings value) =>
       _write('settings.json', value.toJson());
   Future<List<VpnNode>> loadNodes() async {
-    final data = await _read('nodes.json');
+    final file = File('${root.path}${Platform.pathSeparator}nodes.json');
+    String text;
+    try {
+      text = await file.readAsString();
+    } catch (_) {
+      return const [];
+    }
+    final data = await Isolate.run(() => jsonDecode(text));
+    if (data is! Map<String, dynamic>) return const [];
     return [
       for (final item in data?['nodes'] ?? const [])
         VpnNode.fromJson(Map<String, dynamic>.from(item)),
