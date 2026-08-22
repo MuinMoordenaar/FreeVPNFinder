@@ -10,6 +10,7 @@ Windows 10/11 MVP built with Flutter and sing-box. The app downloads public shar
 - offline source cache and JSON state in `%AppData%`
 - sequential first-working-node discovery and five-node backup pool
 - hard failover and latency failover with hysteresis/cooldown
+- Windows installer with optional desktop shortcut and installer-based updates
 - tray, settings, activity log, and polished dark UI
 
 ## Build
