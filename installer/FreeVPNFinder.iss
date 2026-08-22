@@ -1,4 +1,4 @@
-#define MyAppName "FreeVPN Finder"
+#define MyAppName "Free VPN Finder"
 #define MyAppVersion "1.1.9"
 #define MyAppPublisher "Nezer"
 #define MyAppExeName "free_vpn_finder.exe"
@@ -8,7 +8,7 @@ AppId={{B5C9CE87-6C13-43C2-8D86-7C4F1F3F4B0D}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-AppCopyright=FreeVPN Finder, made by Nezer
+AppCopyright=Free VPN Finder, made by Nezer
 DefaultDirName={autopf}\FreeVPN Finder
 DefaultGroupName={#MyAppName}
 OutputDir=..\releases
