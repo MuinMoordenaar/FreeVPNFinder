@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:tray_manager/tray_manager.dart';
@@ -6,6 +7,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'models.dart';
 import 'node_parser.dart';
+import 'reconnect_policy.dart';
 import 'sing_box_engine.dart';
 import 'sources.dart';
 import 'storage.dart';
@@ -18,6 +20,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   List<VpnSource> sources = [];
   List<VpnNode> nodes = [], backups = [];
   VpnNode? activeNode;
+  VpnNode? _preferredNode;
   AppPhase phase = AppPhase.disconnected;
   String status = 'Ready';
   String? error;
@@ -27,6 +30,8 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   DateTime? _lastFailover;
   int _qualityFailures = 0;
   bool _cancelRequested = false;
+  bool _operationInFlight = false;
+  bool _shuttingDown = false;
 
   bool get connected =>
       phase == AppPhase.connected || phase == AppPhase.degraded;
@@ -37,16 +42,36 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     engine = SingBoxEngine(storage);
     settings = await storage.loadSettings();
     nodes = await storage.loadNodes();
+    final savedPool = await storage.loadConnectionPool();
+    final nodesByFingerprint = {
+      for (final node in nodes) node.fingerprint: node,
+    };
+    _preferredNode = nodesByFingerprint[savedPool.active];
+    backups = [
+      for (final fingerprint in savedPool.backups)
+        if (nodesByFingerprint[fingerprint] case final node?)
+          node..state = NodeState.standby,
+    ];
     sources = await storage.loadSources() ?? SourceRepository.defaults.toList();
     trayManager.addListener(this);
     windowManager.addListener(this);
     await _setupTray();
-    _log('Application initialized with ${nodes.length} cached nodes');
+    _log(
+      'Application initialized with ${nodes.length} cached nodes and ${backups.length} saved backups',
+    );
   }
 
   Future<void> _setupTray() async {
     try {
-      await trayManager.setIcon('windows/runner/resources/app_icon.ico');
+      final packagedIcon = File(
+        '${File(Platform.resolvedExecutable).parent.path}'
+        '${Platform.pathSeparator}app_icon.ico',
+      );
+      await trayManager.setIcon(
+        await packagedIcon.exists()
+            ? packagedIcon.path
+            : 'windows/runner/resources/app_icon.ico',
+      );
       await trayManager.setToolTip('Free VPN Finder');
       await trayManager.setContextMenu(
         Menu(
@@ -73,15 +98,15 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   }
 
   @override
-  void onTrayMenuItemClick(MenuItem item) {
+  void onTrayMenuItemClick(MenuItem item) async {
     if (item.key == 'show') onTrayIconMouseDown();
-    if (item.key == 'toggle') toggleConnection();
-    if (item.key == 'exit') shutdown();
+    if (item.key == 'toggle') await toggleConnection();
+    if (item.key == 'exit') await shutdown();
   }
 
   @override
   void onWindowClose() async {
-    await windowManager.hide();
+    await shutdown();
   }
 
   void _setPhase(AppPhase value, String message) {
@@ -101,34 +126,48 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     notifyListeners();
   }
 
-  Future<void> toggleConnection() =>
-      connected || phase == AppPhase.searching || phase == AppPhase.connecting
-      ? disconnect()
-      : connect();
+  Future<void> toggleConnection() async {
+    if (_operationInFlight || _shuttingDown) return;
+    _operationInFlight = true;
+    try {
+      if (phase == AppPhase.disconnected) {
+        await connect();
+      } else {
+        await disconnect();
+      }
+    } finally {
+      _operationInFlight = false;
+    }
+  }
 
   Future<void> connect() async {
     _cancelRequested = false;
     tested = 0;
     try {
+      _setPhase(AppPhase.searching, 'Checking your recent servers…');
+      final attempted = <String>{};
+      final recent = recentConnectionCandidates(_preferredNode, backups);
+      final cachedWinner = await _findFirstWorking(recent, attempted);
+      if (cachedWinner != null) {
+        await _activate(cachedWinner);
+        unawaited(_fillBackups(exclude: cachedWinner));
+        return;
+      }
+
+      _preferredNode = null;
+      backups.removeWhere((node) => attempted.contains(node.fingerprint));
+      await _persistPool();
       await refreshSources();
       if (_cancelRequested) return;
       _setPhase(AppPhase.searching, 'Searching for a working server…');
-      final candidates = nodes.where(_eligible).take(80).toList();
-      for (final node in candidates) {
-        if (_cancelRequested) return;
-        tested++;
-        node.state = NodeState.checking;
-        notifyListeners();
-        final result = await engine.probe(node, port: 21800 + tested % 100);
-        if (result.ok) {
-          node.recordSuccess(result.latency);
-          _log('${node.name} passed in ${result.latency} ms');
-          await _activate(node);
-          unawaited(_fillBackups(exclude: node));
-          return;
-        }
-        node.recordFailure();
-        _log('${node.name} failed: ${result.error ?? 'unreachable'}');
+      final winner = await _findFirstWorking(
+        nodes.where(_eligible).take(80),
+        attempted,
+      );
+      if (winner != null) {
+        await _activate(winner);
+        unawaited(_fillBackups(exclude: winner));
+        return;
       }
       throw StateError('No working servers found');
     } catch (e) {
@@ -137,6 +176,28 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
       await storage.saveNodes(nodes);
       await _setupTray();
     }
+  }
+
+  Future<VpnNode?> _findFirstWorking(
+    Iterable<VpnNode> candidates,
+    Set<String> attempted,
+  ) async {
+    for (final node in candidates) {
+      if (_cancelRequested) return null;
+      if (!attempted.add(node.fingerprint)) continue;
+      tested++;
+      node.state = NodeState.checking;
+      notifyListeners();
+      final result = await engine.probe(node, port: 21800 + tested % 100);
+      if (result.ok) {
+        node.recordSuccess(result.latency);
+        _log('${node.name} passed in ${result.latency} ms');
+        return node;
+      }
+      node.recordFailure();
+      _log('${node.name} failed: ${result.error ?? 'unreachable'}');
+    }
+    return null;
   }
 
   bool _eligible(VpnNode n) =>
@@ -159,6 +220,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   }
 
   Future<void> _activate(VpnNode node) async {
+    final previous = activeNode;
     _setPhase(AppPhase.connecting, 'Connecting to ${node.name}…');
     await engine.start(node, settings.mode);
     _setPhase(AppPhase.verifying, 'Verifying connection…');
@@ -168,15 +230,24 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
       node.recordFailure();
       throw StateError('Connection verification failed');
     }
-    activeNode?.state = NodeState.working;
+    if (previous != null &&
+        previous.fingerprint != node.fingerprint &&
+        previous.consecutiveFailures == 0 &&
+        !backups.any((backup) => backup.fingerprint == previous.fingerprint)) {
+      previous.state = NodeState.standby;
+      backups.add(previous);
+    }
+    backups.removeWhere((backup) => backup.fingerprint == node.fingerprint);
     activeNode = node..state = NodeState.active;
+    _preferredNode = node;
     node.recordSuccess(result.latency);
     node.state = NodeState.active;
-    _setPhase(AppPhase.connected, 'Protected');
+    _setPhase(AppPhase.connected, 'Connected');
     _log(
       'Connected to ${node.name} (${result.latency} ms) using ${settings.mode.label}',
     );
     _startHealthMonitor();
+    await _persistPool();
   }
 
   Future<void> _fillBackups({VpnNode? exclude}) async {
@@ -196,12 +267,14 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
         node.state = NodeState.standby;
         backups.add(node);
         _log('Backup ${backups.length}/5 ready: ${node.name}');
+        await _persistPool();
         notifyListeners();
       } else {
         node.recordFailure();
       }
     }
     await storage.saveNodes(nodes);
+    await _persistPool();
   }
 
   void _startHealthMonitor() {
@@ -241,10 +314,14 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   }
 
   Future<void> failover({required bool hard}) async {
+    if (hard && activeNode?.consecutiveFailures != 0) {
+      _preferredNode = null;
+    }
     if (backups.isEmpty) {
       _log('No prepared backup; starting a new search');
       await engine.stop();
       activeNode = null;
+      await _persistPool();
       await connect();
       return;
     }
@@ -262,6 +339,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
       return;
     }
     backups.remove(next);
+    await _persistPool();
     _setPhase(AppPhase.switching, 'Switching server…');
     try {
       await _activate(next);
@@ -280,9 +358,13 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     _cancelRequested = true;
     _healthTimer?.cancel();
     _setPhase(AppPhase.disconnecting, 'Disconnecting…');
+    if (activeNode != null) {
+      _preferredNode = activeNode;
+      activeNode!.state = NodeState.working;
+    }
+    await _persistPool();
     await engine.stop();
     activeNode = null;
-    backups.clear();
     _setPhase(AppPhase.disconnected, 'Ready');
     await _setupTray();
   }
@@ -334,6 +416,13 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     notifyListeners();
   }
 
+  Future<void> _persistPool() => storage.saveConnectionPool(
+    activeFingerprint: _preferredNode?.fingerprint,
+    backupFingerprints: backups
+        .where((node) => node.fingerprint != activeNode?.fingerprint)
+        .map((node) => node.fingerprint),
+  );
+
   void _fail(String message) {
     error = message.replaceFirst('Bad state: ', '');
     phase = AppPhase.error;
@@ -342,10 +431,16 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   }
 
   Future<void> shutdown() async {
-    await disconnect();
-    trayManager.removeListener(this);
-    windowManager.removeListener(this);
-    await trayManager.destroy();
-    await windowManager.destroy();
+    if (_shuttingDown) return;
+    _shuttingDown = true;
+    try {
+      await disconnect();
+      trayManager.removeListener(this);
+      windowManager.removeListener(this);
+      await trayManager.destroy();
+      await windowManager.destroy();
+    } finally {
+      _shuttingDown = false;
+    }
   }
 }

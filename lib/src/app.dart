@@ -1,14 +1,15 @@
-import 'dart:ui';
+import 'dart:math' show pi, sin;
 
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'controller.dart';
 import 'models.dart';
 
-const bg = Color(0xFF070B17),
-    panel = Color(0xFF10172A),
-    blue = Color(0xFF5B7CFF),
-    cyan = Color(0xFF35D8FF);
+const bg = Color(0xFF090C12),
+    panel = Color(0xFF151517),
+    blue = Color(0xFFF2F2F2),
+    cyan = Color(0xFFB8B8BC);
 
 class FreeVpnFinderApp extends StatelessWidget {
   const FreeVpnFinderApp({super.key, required this.controller});
@@ -26,23 +27,32 @@ class FreeVpnFinderApp extends StatelessWidget {
       ),
       textTheme: ThemeData.dark().textTheme.apply(
         fontFamily: 'Segoe UI',
-        bodyColor: const Color(0xFFDDE5FF),
+        bodyColor: const Color(0xFFE9E9EC),
         displayColor: Colors.white,
       ),
       cardTheme: CardThemeData(
-        color: panel.withValues(alpha: .78),
+        color: panel,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(22),
-          side: const BorderSide(color: Color(0x1FFFFFFF)),
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: Color(0xFF2B2B30)),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: const Color(0xFF0B1122),
+        fillColor: const Color(0xFF0D0D0F),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: const Color(0xFF101012),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       ),
     ),
@@ -72,116 +82,113 @@ class _DashboardState extends State<Dashboard> {
     builder: (_, __) {
       final c = widget.controller;
       return Scaffold(
-        body: Stack(
-          children: [
-            const Positioned(
-              top: -180,
-              left: 180,
-              child: _Glow(color: blue, size: 520),
-            ),
-            const Positioned(
-              bottom: -240,
-              right: -80,
-              child: _Glow(color: Color(0xFF752CFF), size: 560),
-            ),
-            SafeArea(
-              child: Row(
-                children: [
-                  Container(
-                    width: 210,
-                    margin: const EdgeInsets.all(16),
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 22,
-                      horizontal: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xC90D1427),
-                      borderRadius: BorderRadius.circular(26),
-                      border: Border.all(color: Colors.white10),
-                    ),
-                    child: Column(
-                      children: [
-                        const Row(
-                          children: [
-                            SizedBox(width: 4),
-                            _MiniLogo(),
-                            SizedBox(width: 11),
-                            Expanded(
-                              child: Text(
-                                'Free VPN\nFinder',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.05,
-                                  fontSize: 17,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 34),
-                        for (var i = 0; i < nav.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 7),
-                            child: _NavItem(
-                              icon: nav[i].$1,
-                              label: nav[i].$2,
-                              selected: page == i,
-                              onTap: () => setState(() => page = i),
-                            ),
-                          ),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.all(13),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: .035),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Row(
+        body: DecoratedBox(
+          decoration: const BoxDecoration(color: bg),
+          child: Column(
+            children: [
+              const _WindowBar(),
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 210,
+                      margin: const EdgeInsets.fromLTRB(12, 0, 10, 12),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 18,
+                        horizontal: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF111113),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFF2B2B30)),
+                      ),
+                      child: Column(
+                        children: [
+                          const Row(
                             children: [
-                              Icon(
-                                c.connected
-                                    ? Icons.lock_rounded
-                                    : Icons.lock_open_rounded,
-                                size: 18,
-                                color: c.connected
-                                    ? const Color(0xFF50E3A4)
-                                    : Colors.white38,
-                              ),
-                              const SizedBox(width: 9),
+                              SizedBox(width: 3),
+                              _MiniLogo(),
+                              SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  c.connected ? 'Protected' : 'Not protected',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.white70,
+                                  'Free VPN Finder',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -.2,
+                                    fontSize: 15,
                                   ),
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(0, 16, 16, 16),
-                      child: IndexedStack(
-                        index: page,
-                        children: [
-                          _Home(c),
-                          _Sources(c),
-                          _Profiles(c),
-                          _Settings(c),
-                          _Logs(c),
+                          const SizedBox(height: 28),
+                          for (var i = 0; i < nav.length; i++)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: _NavItem(
+                                icon: nav[i].$1,
+                                label: nav[i].$2,
+                                selected: page == i,
+                                onTap: () => setState(() => page = i),
+                              ),
+                            ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.all(13),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1B1B1E),
+                              borderRadius: BorderRadius.circular(13),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: c.connected
+                                        ? const Color(0xFFF4F4F4)
+                                        : const Color(0xFF6E6E73),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    c.connected
+                                        ? 'Route active'
+                                        : 'Not connected',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.white70,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                  ),
-                ],
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(0, 0, 12, 12),
+                        child: IndexedStack(
+                          index: page,
+                          children: [
+                            _Home(c),
+                            _Sources(c),
+                            _Profiles(c),
+                            _Settings(c),
+                            _Logs(c),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
     },
@@ -209,12 +216,12 @@ class _Home extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Your private connection',
+                  'Connect through a working route',
                   style: TextStyle(fontSize: 25, fontWeight: FontWeight.w700),
                 ),
                 SizedBox(height: 4),
                 Text(
-                  'One click to find and keep a working route',
+                  'Find reachable public configurations automatically',
                   style: TextStyle(color: Colors.white38),
                 ),
               ],
@@ -224,7 +231,7 @@ class _Home extends StatelessWidget {
               child: DropdownButton<ConnectionMode>(
                 value: c.settings.mode,
                 borderRadius: BorderRadius.circular(14),
-                dropdownColor: const Color(0xFF111A30),
+                dropdownColor: const Color(0xFF1B1B1E),
                 items: [
                   for (final m in ConnectionMode.values)
                     DropdownMenuItem(value: m, child: Text(m.label)),
@@ -264,20 +271,18 @@ class _Home extends StatelessWidget {
                             letterSpacing: 1.8,
                             fontWeight: FontWeight.w700,
                             color: active
-                                ? const Color(0xFF50E3A4)
+                                ? Colors.white
                                 : busy
                                 ? cyan
                                 : c.phase == AppPhase.error
-                                ? const Color(0xFFFF6B7B)
+                                ? const Color(0xFFB8B8BC)
                                 : Colors.white70,
                           ),
                         ),
                         const SizedBox(height: 9),
                         Text(
                           c.activeNode?.name ??
-                              (busy
-                                  ? 'Testing node ${c.tested}'
-                                  : 'Press F to connect'),
+                              (busy ? 'Testing node ${c.tested}' : ''),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -806,25 +811,105 @@ class _NavItem extends StatelessWidget {
 class _MiniLogo extends StatelessWidget {
   const _MiniLogo();
   @override
+  Widget build(BuildContext context) => const _BrandMark(size: 38);
+}
+
+class _BrandMark extends StatelessWidget {
+  const _BrandMark({required this.size});
+  final double size;
+
+  @override
   Widget build(BuildContext context) => Container(
-    width: 38,
-    height: 38,
+    width: size,
+    height: size,
     alignment: Alignment.center,
     decoration: BoxDecoration(
-      gradient: const LinearGradient(colors: [blue, Color(0xFF8B5CFF)]),
-      borderRadius: BorderRadius.circular(12),
-      boxShadow: [
-        BoxShadow(color: blue.withValues(alpha: .35), blurRadius: 18),
-      ],
+      shape: BoxShape.circle,
+      color: Colors.white,
+      border: Border.all(color: const Color(0xFFB8B8BC)),
     ),
-    child: const Text(
+    child: Text(
       'F',
-      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+      style: TextStyle(
+        color: const Color(0xFF101012),
+        fontSize: size * .62,
+        height: .9,
+        fontWeight: FontWeight.w800,
+        letterSpacing: -size * .08,
+      ),
     ),
   );
 }
 
-class _ConnectButton extends StatelessWidget {
+class _WindowBar extends StatelessWidget {
+  const _WindowBar();
+
+  Future<void> _toggleMaximize() async {
+    if (await windowManager.isMaximized()) {
+      await windowManager.unmaximize();
+    } else {
+      await windowManager.maximize();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 42,
+    child: Row(
+      children: [
+        Expanded(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanStart: (_) => windowManager.startDragging(),
+            onDoubleTap: _toggleMaximize,
+            child: const SizedBox.expand(),
+          ),
+        ),
+        _WindowControlButton(
+          icon: Icons.remove_rounded,
+          onPressed: windowManager.minimize,
+        ),
+        _WindowControlButton(
+          icon: Icons.crop_square_rounded,
+          onPressed: _toggleMaximize,
+        ),
+        _WindowControlButton(
+          icon: Icons.close_rounded,
+          destructive: true,
+          onPressed: windowManager.close,
+        ),
+        const SizedBox(width: 4),
+      ],
+    ),
+  );
+}
+
+class _WindowControlButton extends StatelessWidget {
+  const _WindowControlButton({
+    required this.icon,
+    required this.onPressed,
+    this.destructive = false,
+  });
+  final IconData icon;
+  final VoidCallback onPressed;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    constraints: const BoxConstraints.tightFor(width: 42, height: 36),
+    padding: EdgeInsets.zero,
+    splashRadius: 18,
+    hoverColor: destructive
+        ? const Color(0xFFB42335)
+        : Colors.white.withValues(alpha: .06),
+    color: Colors.white54,
+    iconSize: 17,
+    onPressed: onPressed,
+    icon: Icon(icon),
+  );
+}
+
+class _ConnectButton extends StatefulWidget {
   const _ConnectButton({
     required this.active,
     required this.busy,
@@ -833,82 +918,157 @@ class _ConnectButton extends StatelessWidget {
   });
   final bool active, busy, error;
   final VoidCallback onTap;
+
+  @override
+  State<_ConnectButton> createState() => _ConnectButtonState();
+}
+
+class _ConnectButtonState extends State<_ConnectButton>
+    with TickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1300),
+  );
+  late final AnimationController _transition = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 520),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.busy) _pulse.repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ConnectButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active != widget.active || oldWidget.busy != widget.busy) {
+      _transition.forward(from: 0);
+    }
+    if (widget.busy && !_pulse.isAnimating) {
+      _pulse.repeat();
+    } else if (!widget.busy && _pulse.isAnimating) {
+      _pulse.stop();
+      _pulse.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    _transition.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final color = active
-        ? const Color(0xFF50E3A4)
-        : error
-        ? const Color(0xFFFF6B7B)
+    final color = widget.active
+        ? Colors.white
+        : widget.error
+        ? const Color(0xFFB8B8BC)
         : cyan;
-    return InkWell(
-      onTap: onTap,
-      customBorder: const CircleBorder(),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 400),
-        width: 178,
-        height: 178,
-        padding: const EdgeInsets.all(9),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            colors: [color.withValues(alpha: .85), blue],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: .28),
-              blurRadius: busy ? 50 : 28,
-              spreadRadius: busy ? 6 : 1,
-            ),
-          ],
-        ),
-        child: Container(
-          decoration: const BoxDecoration(
+    final targetSize = widget.active
+        ? 190.0
+        : widget.busy
+        ? 182.0
+        : 168.0;
+    return AnimatedBuilder(
+      animation: Listenable.merge([_pulse, _transition]),
+      builder: (context, child) {
+        final pulse = widget.busy
+            ? .025 * (1 + sin(_pulse.value * 2 * pi))
+            : 0.0;
+        final bounce = sin(_transition.value * pi) * .07;
+        return Transform.scale(scale: 1 + pulse + bounce, child: child);
+      },
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 420),
+          curve: Curves.easeOutCubic,
+          width: targetSize,
+          height: targetSize,
+          padding: EdgeInsets.all(widget.active ? 7 : 5),
+          decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: Color(0xFF0B1224),
+            color: color.withValues(alpha: .12),
+            border: Border.all(
+              color: color.withValues(alpha: widget.active ? .9 : .58),
+              width: widget.active ? 3 : 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(
+                  alpha: widget.busy
+                      ? .30
+                      : widget.active
+                      ? .24
+                      : .12,
+                ),
+                blurRadius: widget.busy ? 48 : 30,
+                spreadRadius: widget.busy ? 4 : 0,
+              ),
+            ],
           ),
-          child: Center(
-            child: busy
-                ? SizedBox(
-                    width: 66,
-                    height: 66,
+          child: Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color(0xFF0B1018),
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                AnimatedOpacity(
+                  duration: const Duration(milliseconds: 280),
+                  opacity: widget.busy ? .52 : 1,
+                  child: AnimatedScale(
+                    duration: const Duration(milliseconds: 420),
+                    scale: widget.active ? 1.08 : .92,
+                    child: const _BrandMark(size: 104),
+                  ),
+                ),
+                if (widget.busy)
+                  SizedBox(
+                    width: targetSize - 30,
+                    height: targetSize - 30,
                     child: CircularProgressIndicator(
-                      strokeWidth: 3,
+                      strokeWidth: 2.5,
                       color: color,
                     ),
-                  )
-                : Text(
-                    'F',
-                    style: TextStyle(
-                      fontSize: 74,
-                      height: 1,
-                      fontWeight: FontWeight.w800,
-                      foreground: Paint()
-                        ..shader = const LinearGradient(
-                          colors: [Colors.white, cyan],
-                        ).createShader(const Rect.fromLTWH(0, 0, 90, 90)),
+                  ),
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 360),
+                  curve: Curves.easeOutBack,
+                  right: widget.active ? 14 : 22,
+                  bottom: widget.active ? 14 : 22,
+                  child: AnimatedScale(
+                    duration: const Duration(milliseconds: 360),
+                    scale: widget.active ? 1 : 0,
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                        border: Border.all(
+                          color: const Color(0xFF101012),
+                          width: 4,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.check_rounded,
+                        size: 19,
+                        color: Color(0xFF111113),
+                      ),
                     ),
                   ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
-}
-
-class _Glow extends StatelessWidget {
-  const _Glow({required this.color, required this.size});
-  final Color color;
-  final double size;
-  @override
-  Widget build(BuildContext context) => ImageFiltered(
-    imageFilter: ImageFilter.blur(sigmaX: 100, sigmaY: 100),
-    child: Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color.withValues(alpha: .12),
-      ),
-    ),
-  );
 }

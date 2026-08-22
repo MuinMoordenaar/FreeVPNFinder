@@ -52,6 +52,26 @@ class LocalStorage {
 
   Future<void> saveNodes(Iterable<VpnNode> value) =>
       _write('nodes.json', {'nodes': value.map((e) => e.toJson()).toList()});
+
+  Future<({String? active, List<String> backups})> loadConnectionPool() async {
+    final data = await _read('connection_pool.json');
+    return (
+      active: data?['activeFingerprint'] as String?,
+      backups: [
+        for (final value in data?['backupFingerprints'] ?? const [])
+          value as String,
+      ],
+    );
+  }
+
+  Future<void> saveConnectionPool({
+    required String? activeFingerprint,
+    required Iterable<String> backupFingerprints,
+  }) => _write('connection_pool.json', {
+    'activeFingerprint': activeFingerprint,
+    'backupFingerprints': backupFingerprints.take(5).toList(),
+    'updatedAt': DateTime.now().toIso8601String(),
+  });
   Future<List<VpnSource>?> loadSources() async {
     final data = await _read('sources.json');
     return data == null

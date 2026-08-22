@@ -12,10 +12,13 @@ Future<void> main() async {
     size: Size(1080, 720),
     minimumSize: Size(940, 640),
     center: true,
-    backgroundColor: Color(0xFF070B17),
+    backgroundColor: Color(0xFF090C12),
     title: 'Free VPN Finder',
+    titleBarStyle: TitleBarStyle.hidden,
+    windowButtonVisibility: false,
   );
   await windowManager.waitUntilReadyToShow(options, () async {
+    await windowManager.setAsFrameless();
     await windowManager.show();
     await windowManager.focus();
   });
