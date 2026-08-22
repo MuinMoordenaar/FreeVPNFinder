@@ -5,7 +5,6 @@ Windows 10/11 MVP built with Flutter and sing-box. The app downloads public shar
 ## Features
 
 - VPN (TUN), System Proxy, and Proxy Only modes
-- Split tunneling with Bypass VPN and Use VPN only modes for Windows applications and domains
 - VLESS/Reality, VMess, Trojan, Shadowsocks, Hysteria2, and TUIC share links
 - Three built-in sources plus custom URI and subscription import
 - offline source cache and JSON state in `%AppData%`

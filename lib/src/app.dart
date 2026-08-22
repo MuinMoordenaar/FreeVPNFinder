@@ -1,5 +1,4 @@
 import 'dart:math' show pi, sin;
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
@@ -73,7 +72,6 @@ class _DashboardState extends State<Dashboard> {
     (1, Icons.radar_rounded, 'Sources'),
     (2, Icons.add_link_rounded, 'Profiles'),
     (4, Icons.terminal_rounded, 'Logs'),
-    (5, Icons.alt_route_rounded, 'Split Tunneling'),
   ];
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
@@ -168,7 +166,6 @@ class _DashboardState extends State<Dashboard> {
                             _Profiles(c),
                             _Settings(c),
                             _Logs(c),
-                            _SplitTunneling(c),
                           ],
                         ),
                       ),
@@ -565,237 +562,6 @@ class _Settings extends StatelessWidget {
             ),
           ),
         ),
-      ],
-    ),
-  );
-}
-
-class _SplitTunneling extends StatefulWidget {
-  const _SplitTunneling(this.c);
-  final AppController c;
-  @override
-  State<_SplitTunneling> createState() => _SplitTunnelingState();
-}
-
-class _SplitTunnelingState extends State<_SplitTunneling> {
-  final appPath = TextEditingController();
-  final domain = TextEditingController();
-  String? message;
-
-  @override
-  void dispose() {
-    appPath.dispose();
-    domain.dispose();
-    super.dispose();
-  }
-
-  Future<void> _browseApp() async {
-    if (!Platform.isWindows) return;
-    const script =
-        r"Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Filter='Applications (*.exe)|*.exe'; if($d.ShowDialog() -eq 'OK'){[Console]::Write($d.FileName)}";
-    final result = await Process.run('powershell.exe', [
-      '-NoProfile',
-      '-STA',
-      '-Command',
-      script,
-    ]);
-    if (result.exitCode == 0 && '${result.stdout}'.trim().isNotEmpty) {
-      appPath.text = '${result.stdout}'.trim();
-    }
-  }
-
-  Future<void> _addApp() async {
-    try {
-      await widget.c.addSplitApp(appPath.text);
-      appPath.clear();
-      setState(() => message = 'Application added');
-    } catch (e) {
-      setState(() => message = '$e');
-    }
-  }
-
-  Future<void> _addDomain() async {
-    try {
-      await widget.c.addSplitDomain(domain.text);
-      domain.clear();
-      setState(() => message = 'Website added');
-    } catch (e) {
-      setState(() => message = '$e');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final split = widget.c.settings.splitTunneling;
-    return _Page(
-      title: 'Split Tunneling',
-      subtitle: 'Choose which applications and websites use the VPN',
-      child: ListView(
-        children: [
-          Card(
-            child: Column(
-              children: [
-                SwitchListTile(
-                  title: const Text('Enable split tunneling'),
-                  subtitle: const Text('Available when Connection mode is VPN'),
-                  value: split.enabled,
-                  onChanged: (value) {
-                    split.enabled = value;
-                    widget.c.saveSplitTunneling();
-                  },
-                ),
-                const Divider(height: 1),
-                RadioListTile<SplitTunnelMode>(
-                  title: const Text('Bypass VPN'),
-                  subtitle: const Text(
-                    'Everything uses VPN except selected items',
-                  ),
-                  value: SplitTunnelMode.bypass,
-                  groupValue: split.mode,
-                  onChanged: (value) {
-                    if (value == null) return;
-                    split.mode = value;
-                    widget.c.saveSplitTunneling();
-                  },
-                ),
-                RadioListTile<SplitTunnelMode>(
-                  title: const Text('Use VPN only'),
-                  subtitle: const Text('Only selected items use VPN'),
-                  value: SplitTunnelMode.vpnOnly,
-                  groupValue: split.mode,
-                  onChanged: (value) {
-                    if (value == null) return;
-                    split.mode = value;
-                    widget.c.saveSplitTunneling();
-                  },
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          _SplitListCard(
-            title: 'Applications',
-            icon: Icons.apps_rounded,
-            empty: 'No applications added',
-            children: [
-              for (var i = 0; i < split.applications.length; i++)
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.window_rounded, color: cyan),
-                  title: Text(split.applications[i].name),
-                  subtitle: Text(split.applications[i].path),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => widget.c.removeSplitApp(i),
-                  ),
-                ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: appPath,
-                        decoration: const InputDecoration(
-                          hintText: r'C:\Path\Application.exe',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      onPressed: _browseApp,
-                      icon: const Icon(Icons.folder_open),
-                    ),
-                    FilledButton(
-                      onPressed: _addApp,
-                      child: const Text('Add App'),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _SplitListCard(
-            title: 'Websites',
-            icon: Icons.language_rounded,
-            empty: 'No websites added',
-            children: [
-              for (var i = 0; i < split.domains.length; i++)
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.public_rounded, color: cyan),
-                  title: Text(split.domains[i]),
-                  subtitle: const Text('Includes subdomains'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => widget.c.removeSplitDomain(i),
-                  ),
-                ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: domain,
-                        decoration: const InputDecoration(
-                          hintText: 'youtube.com',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: _addDomain,
-                      child: const Text('Add Website'),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (message != null)
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(message!, style: const TextStyle(color: cyan)),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SplitListCard extends StatelessWidget {
-  const _SplitListCard({
-    required this.title,
-    required this.icon,
-    required this.empty,
-    required this.children,
-  });
-  final String title, empty;
-  final IconData icon;
-  final List<Widget> children;
-  @override
-  Widget build(BuildContext context) => Card(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
-          child: Row(
-            children: [
-              Icon(icon, color: cyan),
-              const SizedBox(width: 10),
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-            ],
-          ),
-        ),
-        if (children.length == 1)
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(empty, style: const TextStyle(color: Colors.white38)),
-          ),
-        ...children,
       ],
     ),
   );
