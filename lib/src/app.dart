@@ -196,35 +196,33 @@ class _Home extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Free VPN Finder',
-                  style: TextStyle(fontSize: 25, fontWeight: FontWeight.w700),
-                ),
-              ],
-            ),
-            const Spacer(),
-            DropdownButtonHideUnderline(
-              child: DropdownButton<ConnectionMode>(
-                value: c.settings.mode,
-                borderRadius: BorderRadius.circular(10),
-                dropdownColor: const Color(0xFF1B1B1E),
-                items: [
-                  for (final m in ConnectionMode.values)
-                    DropdownMenuItem(value: m, child: Text(m.label)),
-                ],
-                onChanged: busy
-                    ? null
-                    : (m) {
-                        if (m != null) c.changeMode(m);
-                      },
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Row(
+            children: [
+              const Text(
+                'Free VPN Finder',
+                style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700),
               ),
-            ),
-          ],
+              const Spacer(),
+              DropdownButtonHideUnderline(
+                child: DropdownButton<ConnectionMode>(
+                  value: c.settings.mode,
+                  borderRadius: BorderRadius.circular(10),
+                  dropdownColor: const Color(0xFF1B1B1E),
+                  items: [
+                    for (final m in ConnectionMode.values)
+                      DropdownMenuItem(value: m, child: Text(m.label)),
+                  ],
+                  onChanged: busy
+                      ? null
+                      : (m) {
+                          if (m != null) c.changeMode(m);
+                        },
+                ),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 18),
         Expanded(
@@ -580,25 +578,28 @@ class _Page extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Row(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 25,
-                  fontWeight: FontWeight.w700,
+      Padding(
+        padding: const EdgeInsets.only(left: 8),
+        child: Row(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 25,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(subtitle, style: const TextStyle(color: Colors.white38)),
-            ],
-          ),
-          const Spacer(),
-          if (action != null) action!,
-        ],
+                const SizedBox(height: 4),
+                Text(subtitle, style: const TextStyle(color: Colors.white38)),
+              ],
+            ),
+            const Spacer(),
+            if (action != null) action!,
+          ],
+        ),
       ),
       const SizedBox(height: 18),
       Expanded(child: child),
@@ -795,26 +796,15 @@ class _BrandMark extends StatelessWidget {
   final bool inverted;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => SizedBox(
     width: size,
     height: size,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      color: inverted ? const Color(0xFF0B1018) : Colors.white,
-      border: Border.all(
-        color: inverted ? const Color(0xFFB8B8BC) : const Color(0xFF101012),
+    child: ColorFiltered(
+      colorFilter: ColorFilter.mode(
+        inverted ? const Color(0xFF101012) : Colors.white,
+        BlendMode.srcIn,
       ),
-    ),
-    child: Text(
-      'F',
-      style: TextStyle(
-        color: inverted ? Colors.white : const Color(0xFF101012),
-        fontSize: size * .62,
-        height: .9,
-        fontWeight: FontWeight.w800,
-        letterSpacing: -size * .08,
-      ),
+      child: Image.asset('assets/brand_logo.png', fit: BoxFit.contain),
     ),
   );
 }
@@ -980,21 +970,17 @@ class _ConnectButtonState extends State<_ConnectButton>
             boxShadow: [
               BoxShadow(
                 color: color.withValues(
-                  alpha: widget.busy
-                      ? .30
-                      : widget.active
-                      ? .24
-                      : .12,
+                  alpha: widget.busy || widget.active ? .30 : 0,
                 ),
-                blurRadius: widget.busy ? 48 : 30,
+                blurRadius: widget.busy || widget.active ? 38 : 0,
                 spreadRadius: widget.busy ? 4 : 0,
               ),
             ],
           ),
           child: Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Color(0xFF0B1018),
+              color: widget.active ? Colors.white : const Color(0xFF0B1018),
             ),
             child: Stack(
               alignment: Alignment.center,
