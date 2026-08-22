@@ -108,7 +108,12 @@ class SingBoxEngine {
     Duration timeout = const Duration(seconds: 8),
   }) => _httpProbe(proxyPort, timeout);
 
-  Future<ProbeResult> probe(VpnNode node, {int port = 21800}) async {
+  Future<ProbeResult> probe(
+    VpnNode node, {
+    int port = 0,
+    Duration timeout = const Duration(seconds: 7),
+  }) async {
+    final probePort = port == 0 ? await _findFreePort() : port;
     final binary = await binaryPath;
     final config = File(
       '${storage.root.path}${Platform.pathSeparator}probe-${node.id}.json',
@@ -118,7 +123,7 @@ class SingBoxEngine {
         configBuilder.build(
           node,
           ConnectionMode.proxyOnly,
-          proxyPort: port,
+          proxyPort: probePort,
           testOnly: true,
         ),
       ),
@@ -132,7 +137,7 @@ class SingBoxEngine {
       process = await Process.start(binary, ['run', '-c', config.path]);
       _probeProcesses.add(process);
       await Future<void>.delayed(const Duration(milliseconds: 350));
-      return await _httpProbe(port, const Duration(seconds: 7));
+      return await _httpProbe(probePort, timeout);
     } catch (e) {
       return ProbeResult(false, 0, '$e');
     } finally {

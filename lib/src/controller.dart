@@ -14,6 +14,7 @@ import 'storage.dart';
 
 class AppController extends ChangeNotifier with TrayListener, WindowListener {
   static const _backupReplacementMarginMs = 0;
+  static const _backgroundProbeConcurrency = 3;
   final storage = LocalStorage();
   late final SourceRepository repository;
   late final SingBoxEngine engine;
@@ -278,39 +279,41 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
         .where((n) => n.fingerprint != exclude?.fingerprint)
         .toList();
     try {
-      final node = _nextBackgroundCandidate(exclude: exclude);
-      if (node == null || _shuttingDown) return;
+      final reserved = <String>{};
+      final candidates = <VpnNode>[];
+      for (var i = 0; i < _backgroundProbeConcurrency; i++) {
+        final node = _nextBackgroundCandidate(
+          exclude: exclude,
+          reserved: reserved,
+        );
+        if (node == null) break;
+        candidates.add(node);
+        reserved.add(node.fingerprint);
+      }
+      if (candidates.isEmpty || _shuttingDown) return;
       await Future<void>.delayed(
         Duration(seconds: settings.backupProbeIntervalSeconds),
       );
       if (_shuttingDown) return;
 
-      _log('Background check: ${node.name} (${node.protocol})');
-      ProbeResult result;
-      try {
-        result = await engine
-            .probe(node, port: 21950)
-            .timeout(const Duration(seconds: 12));
-      } on TimeoutException {
-        node.recordFailure();
-        _log('Backup candidate timed out: ${node.name}');
-        return;
-      } catch (e) {
-        node.recordFailure();
-        _log('Backup candidate error: ${node.name}: $e');
-        return;
-      }
-      if (!result.ok) {
-        node.recordFailure();
-        _log('Backup candidate failed: ${node.name}');
-      } else {
+      final results = await Future.wait(
+        candidates.map(_probeBackgroundCandidate),
+      );
+      for (final entry in results) {
+        final node = entry.node;
+        final result = entry.result;
+        if (!result.ok) {
+          node.recordFailure();
+          _log('Backup candidate failed: ${node.name}');
+          continue;
+        }
         node.recordSuccess(result.latency);
         node.state = NodeState.standby;
         if (backups.length < settings.backupPoolSize) {
           backups.add(node);
           _log(
             'Backup ${backups.length}/${settings.backupPoolSize} ready: '
-            '${node.name}',
+            '${node.name} (${result.latency} ms)',
           );
         } else {
           final slowest = backups.reduce(
@@ -328,15 +331,29 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
             );
           }
         }
-        _sortAndTrimBackups();
-        await _persistPool();
-        notifyListeners();
       }
+      _sortAndTrimBackups();
+      await _persistPool();
+      notifyListeners();
       _scheduleNodesSave();
     } finally {
       _backupRefreshRunning = false;
     }
     await _persistPool();
+  }
+
+  Future<({VpnNode node, ProbeResult result})> _probeBackgroundCandidate(
+    VpnNode node,
+  ) async {
+    _log('Background check: ${node.name} (${node.protocol})');
+    try {
+      final result = await engine
+          .probe(node, port: 0, timeout: const Duration(seconds: 5))
+          .timeout(const Duration(seconds: 8));
+      return (node: node, result: result);
+    } catch (e) {
+      return (node: node, result: ProbeResult(false, 0, '$e'));
+    }
   }
 
   void _scheduleNodesSave() {
@@ -347,7 +364,10 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     });
   }
 
-  VpnNode? _nextBackgroundCandidate({VpnNode? exclude}) {
+  VpnNode? _nextBackgroundCandidate({
+    VpnNode? exclude,
+    Set<String> reserved = const {},
+  }) {
     if (nodes.isEmpty) return null;
     VpnNode? fallback;
     String? fallbackGroup;
@@ -357,6 +377,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
       final node = nodes[index];
       if (node.fingerprint == exclude?.fingerprint ||
           node.fingerprint == activeNode?.fingerprint ||
+          reserved.contains(node.fingerprint) ||
           backups.any((backup) => backup.fingerprint == node.fingerprint) ||
           !_backgroundEligible(node)) {
         continue;
