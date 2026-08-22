@@ -13,7 +13,7 @@ const bg = Color(0xFF090C12),
     panel = Color(0xFF151517),
     blue = Color(0xFFF2F2F2),
     cyan = Color(0xFFB8B8BC);
-const appVersion = '1.2.0';
+const appVersion = '1.2.1';
 const latestReleaseApi =
     'https://api.github.com/repos/MuinMoordenaar/FreeVPNFinder/releases/latest';
 
@@ -187,11 +187,46 @@ class _DashboardState extends State<Dashboard> {
   );
 }
 
-class _Home extends StatelessWidget {
+class _Home extends StatefulWidget {
   const _Home(this.c);
   final AppController c;
+
+  @override
+  State<_Home> createState() => _HomeState();
+}
+
+class _HomeState extends State<_Home> {
+  String updateLabel = 'Checking for updates...';
+  String? updateUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUpdateStatus();
+  }
+
+  Future<void> _loadUpdateStatus() async {
+    final update = await _fetchLatestUpdate();
+    if (!mounted) return;
+    setState(() {
+      updateUrl = update?.url;
+      updateLabel = update == null
+          ? 'You have the latest version installed'
+          : 'Update to the latest version';
+    });
+  }
+
+  Future<void> _openUpdate() async {
+    if (updateUrl == null) {
+      await _loadUpdateStatus();
+      return;
+    }
+    await Process.start('explorer.exe', [updateUrl!]);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final c = widget.c;
     final busy = !{
       AppPhase.disconnected,
       AppPhase.connected,
@@ -363,9 +398,15 @@ class _Home extends StatelessWidget {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: () => _checkForUpdates(context),
+                        onPressed:
+                            updateUrl == null &&
+                                updateLabel != 'Checking for updates...'
+                            ? _openUpdate
+                            : updateUrl != null
+                            ? _openUpdate
+                            : null,
                         icon: const Icon(Icons.system_update_alt_rounded),
-                        label: const Text('Update'),
+                        label: Text(updateLabel),
                       ),
                     ),
                   ],
@@ -481,7 +522,12 @@ class _ProfilesState extends State<_Profiles> {
   );
 }
 
-Future<void> _checkForUpdates(BuildContext context) async {
+class _UpdateLink {
+  const _UpdateLink(this.url);
+  final String url;
+}
+
+Future<_UpdateLink?> _fetchLatestUpdate() async {
   try {
     final response = await http
         .get(
@@ -498,43 +544,13 @@ Future<void> _checkForUpdates(BuildContext context) async {
           (asset['name'] as String? ?? '').toLowerCase().endsWith('.zip'),
       orElse: () => <String, dynamic>{},
     );
-    if (!context.mounted) return;
-    if (latest.isEmpty || _compareVersions(latest, appVersion) <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Установлена последняя версия.')),
-      );
-    } else if (zip['browser_download_url'] is String) {
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text('Доступна версия $latest'),
-          content: const Text('Откроется скачивание portable ZIP-архива.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Process.start('explorer.exe', [
-                  zip['browser_download_url'] as String,
-                ]);
-                Navigator.pop(context);
-              },
-              child: const Text('Скачать ZIP'),
-            ),
-          ],
-        ),
-      );
-    } else {
-      throw Exception('ZIP asset is missing');
-    }
+    if (latest.isEmpty || _compareVersions(latest, appVersion) <= 0)
+      return null;
+    final url = zip['browser_download_url'];
+    if (url is! String) throw Exception('ZIP asset is missing');
+    return _UpdateLink(url);
   } catch (_) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось проверить обновления.')),
-      );
-    }
+    return null;
   }
 }
 
