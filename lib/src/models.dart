@@ -169,7 +169,7 @@ class VpnSource {
 
 class AppSettings {
   AppSettings({
-    this.mode = ConnectionMode.vpn,
+    this.mode = ConnectionMode.systemProxy,
     this.autoQualityFailover = true,
     this.qualityLatencyMs = 800,
     this.failureThreshold = 3,
@@ -195,7 +195,7 @@ class AppSettings {
   factory AppSettings.fromJson(Map<String, dynamic> j) => AppSettings(
     mode:
         ConnectionMode.values.where((e) => e.name == j['mode']).firstOrNull ??
-        ConnectionMode.vpn,
+        ConnectionMode.systemProxy,
     autoQualityFailover: j['autoQualityFailover'] ?? true,
     qualityLatencyMs: j['qualityLatencyMs'] ?? 800,
     failureThreshold: j['failureThreshold'] ?? 3,

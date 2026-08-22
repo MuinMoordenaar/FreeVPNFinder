@@ -4,10 +4,16 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:free_vpn_finder/src/models.dart';
 import 'package:free_vpn_finder/src/node_parser.dart';
+import 'package:free_vpn_finder/src/reconnect_policy.dart';
 import 'package:free_vpn_finder/src/sing_box_config.dart';
 
 void main() {
   final parser = NodeParser();
+
+  test('desktop defaults to System Proxy mode', () {
+    expect(AppSettings().mode, ConnectionMode.systemProxy);
+  });
+
   test('parses and deduplicates vless share links', () {
     const uri =
         'vless://11111111-1111-1111-1111-111111111111@example.com:443?security=reality&sni=example.com&pbk=abc&sid=01&type=tcp#Test';
@@ -48,6 +54,19 @@ void main() {
       'two',
     )!;
     expect(a.fingerprint, b.fingerprint);
+  });
+
+  test('recent reconnect tries the previous active node before backups', () {
+    final active = parser.parseUri(
+      'trojan://active@example.com:443#Active',
+      'saved',
+    )!;
+    final backup = parser.parseUri(
+      'trojan://backup@example.net:443#Backup',
+      'saved',
+    )!;
+    final candidates = recentConnectionCandidates(active, [backup, active]);
+    expect(candidates, [active, backup]);
   });
 
   test('sing-box accepts generated configs for every MVP protocol', () async {

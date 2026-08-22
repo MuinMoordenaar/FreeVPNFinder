@@ -49,4 +49,7 @@ add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
     "$<TARGET_FILE_DIR:${BINARY_NAME}>/core/libcronet.dll"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_CURRENT_SOURCE_DIR}/../../core/LICENSE-sing-box"
-    "$<TARGET_FILE_DIR:${BINARY_NAME}>/core/LICENSE-sing-box")
+    "$<TARGET_FILE_DIR:${BINARY_NAME}>/core/LICENSE-sing-box"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/app_icon.ico"
+    "$<TARGET_FILE_DIR:${BINARY_NAME}>/app_icon.ico")
