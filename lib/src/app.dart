@@ -354,41 +354,6 @@ class _Home extends StatelessWidget {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: c.installingUpdate ? null : c.updateAction,
-                        icon: c.checkingUpdate || c.installingUpdate
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.system_update_alt_rounded),
-                        label: Text(
-                          c.availableUpdate == null
-                              ? 'Update'
-                              : 'Install ${c.availableUpdate!.version}',
-                        ),
-                      ),
-                    ),
-                    if (c.updateMessage != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          c.updateMessage!,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white38,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ),
                   ],
                 ),
               ),

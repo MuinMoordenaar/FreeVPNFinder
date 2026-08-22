@@ -11,7 +11,6 @@ import 'reconnect_policy.dart';
 import 'sing_box_engine.dart';
 import 'sources.dart';
 import 'storage.dart';
-import 'updater.dart';
 
 class AppController extends ChangeNotifier with TrayListener, WindowListener {
   final storage = LocalStorage();
@@ -33,51 +32,9 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   bool _cancelRequested = false;
   bool _operationInFlight = false;
   bool _shuttingDown = false;
-  final updater = AppUpdater();
-  UpdateInfo? availableUpdate;
-  bool checkingUpdate = false;
-  bool installingUpdate = false;
-  String? updateMessage;
 
   bool get connected =>
       phase == AppPhase.connected || phase == AppPhase.degraded;
-
-  Future<void> updateAction() async {
-    if (installingUpdate) return;
-    if (availableUpdate != null) {
-      installingUpdate = true;
-      updateMessage = 'Downloading update…';
-      notifyListeners();
-      try {
-        if (connected) await disconnect();
-        await updater.install(availableUpdate!);
-        updateMessage = 'Restarting…';
-        notifyListeners();
-        await shutdown();
-        exit(0);
-      } catch (e) {
-        installingUpdate = false;
-        updateMessage = e.toString().replaceFirst('Exception: ', '');
-        notifyListeners();
-      }
-      return;
-    }
-    if (checkingUpdate) return;
-    checkingUpdate = true;
-    updateMessage = 'Checking for updates…';
-    notifyListeners();
-    try {
-      availableUpdate = await updater.check();
-      updateMessage = availableUpdate == null
-          ? 'You have the latest version'
-          : 'Version ${availableUpdate!.version} is available';
-    } catch (e) {
-      updateMessage = e.toString().replaceFirst('Exception: ', '');
-    } finally {
-      checkingUpdate = false;
-      notifyListeners();
-    }
-  }
 
   Future<void> initialize() async {
     await storage.initialize();

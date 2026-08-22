@@ -30,6 +30,14 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 [Files]
 Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\data"
+Type: filesandordirs; Name: "{app}\core"
+Type: files; Name: "{app}\free_vpn_finder.exe"
+Type: files; Name: "{app}\free_vpn_finder_updater.exe"
+Type: files; Name: "{app}\*.dll"
+Type: files; Name: "{app}\app_icon.ico"
+
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
