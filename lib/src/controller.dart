@@ -28,12 +28,14 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   final logs = <String>[];
   int tested = 0;
   Timer? _healthTimer;
+  Timer? _backgroundTimer;
   DateTime? _lastFailover;
   int _qualityFailures = 0;
   bool _cancelRequested = false;
   bool _operationInFlight = false;
   bool _shuttingDown = false;
   bool _backupRefreshRunning = false;
+  final _backgroundQueue = <VpnNode>[];
 
   bool get connected =>
       phase == AppPhase.connected || phase == AppPhase.degraded;
@@ -62,6 +64,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     _log(
       'Application initialized with ${nodes.length} cached nodes and ${backups.length} saved backups',
     );
+    _startBackgroundDiscovery();
   }
 
   Future<void> _setupTray() async {
@@ -226,7 +229,10 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
       fresh.addAll(result);
       _log('${source.name}: ${result.length} configurations');
     }
-    if (fresh.isNotEmpty) nodes = repository.deduplicate(fresh, nodes);
+    if (fresh.isNotEmpty) {
+      nodes = repository.deduplicate(fresh, nodes);
+      _backgroundQueue.clear();
+    }
     await storage.saveNodes(nodes);
     _log('${nodes.length} unique nodes available');
   }
@@ -270,34 +276,32 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
         .where((n) => n.fingerprint != exclude?.fingerprint)
         .toList();
     try {
-      for (final node in _backgroundCandidates()) {
-        if (_cancelRequested || !connected) break;
-        await Future<void>.delayed(
-          Duration(seconds: settings.backupProbeIntervalSeconds),
-        );
-        if (_cancelRequested || !connected) break;
+      final node = _nextBackgroundCandidate(exclude: exclude);
+      if (node == null || _shuttingDown) return;
+      await Future<void>.delayed(
+        Duration(seconds: settings.backupProbeIntervalSeconds),
+      );
+      if (_shuttingDown) return;
 
-        _log('Background check: ${node.name} (${node.protocol})');
-        ProbeResult result;
-        try {
-          result = await engine
-              .probe(node, port: 21950)
-              .timeout(const Duration(seconds: 12));
-        } on TimeoutException {
-          node.recordFailure();
-          _log('Backup candidate timed out: ${node.name}');
-          continue;
-        } catch (e) {
-          node.recordFailure();
-          _log('Backup candidate error: ${node.name}: $e');
-          continue;
-        }
-        if (!result.ok) {
-          node.recordFailure();
-          _log('Backup candidate failed: ${node.name}');
-          continue;
-        }
-
+      _log('Background check: ${node.name} (${node.protocol})');
+      ProbeResult result;
+      try {
+        result = await engine
+            .probe(node, port: 21950)
+            .timeout(const Duration(seconds: 12));
+      } on TimeoutException {
+        node.recordFailure();
+        _log('Backup candidate timed out: ${node.name}');
+        return;
+      } catch (e) {
+        node.recordFailure();
+        _log('Backup candidate error: ${node.name}: $e');
+        return;
+      }
+      if (!result.ok) {
+        node.recordFailure();
+        _log('Backup candidate failed: ${node.name}');
+      } else {
         node.recordSuccess(result.latency);
         node.state = NodeState.standby;
         if (backups.length < settings.backupPoolSize) {
@@ -334,6 +338,32 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     await _persistPool();
   }
 
+  VpnNode? _nextBackgroundCandidate({VpnNode? exclude}) {
+    while (true) {
+      if (_backgroundQueue.isEmpty) {
+        _backgroundQueue.addAll(_backgroundCandidates());
+      }
+      if (_backgroundQueue.isEmpty) return null;
+      final node = _backgroundQueue.removeAt(0);
+      if (node.fingerprint == exclude?.fingerprint ||
+          node.fingerprint == activeNode?.fingerprint ||
+          backups.any((backup) => backup.fingerprint == node.fingerprint) ||
+          !_backgroundEligible(node)) {
+        continue;
+      }
+      return node;
+    }
+  }
+
+  void _startBackgroundDiscovery() {
+    _backgroundTimer?.cancel();
+    _backgroundTimer = Timer.periodic(
+      Duration(seconds: settings.backupProbeIntervalSeconds),
+      (_) => unawaited(_fillBackups(exclude: activeNode)),
+    );
+    unawaited(_fillBackups(exclude: activeNode));
+  }
+
   Iterable<VpnNode> _backgroundCandidates() sync* {
     final groups = <String, List<VpnNode>>{};
     for (final node in nodes) {
@@ -354,6 +384,11 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
         final checked = (a.lastCheckedAt ?? DateTime(0)).compareTo(
           b.lastCheckedAt ?? DateTime(0),
         );
+        final priority = _backgroundPriority(a)
+            .compareTo(_backgroundPriority(b));
+        if (priority != 0) return priority;
+        final latency = (a.latency ?? 1 << 30).compareTo(b.latency ?? 1 << 30);
+        if (latency != 0) return latency;
         return checked != 0 ? checked : a.fingerprint.compareTo(b.fingerprint);
       });
     }
@@ -374,6 +409,12 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     final checkedAt = node.lastCheckedAt;
     return checkedAt == null ||
         DateTime.now().difference(checkedAt) >= const Duration(minutes: 5);
+  }
+
+  int _backgroundPriority(VpnNode node) {
+    if (node.lastCheckedAt == null) return 0;
+    if (node.consecutiveFailures > 0) return 2;
+    return 1;
   }
 
   void _startHealthMonitor() {
@@ -520,9 +561,10 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   Future<void> saveSettings() async {
     await storage.saveSettings(settings);
     _sortAndTrimBackups();
+    _backgroundQueue.clear();
     await _persistPool();
     _startHealthMonitor();
-    if (connected) unawaited(_fillBackups(exclude: activeNode));
+    _startBackgroundDiscovery();
     notifyListeners();
   }
 
@@ -557,6 +599,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   Future<void> shutdown() async {
     if (_shuttingDown) return;
     _shuttingDown = true;
+    _backgroundTimer?.cancel();
     try {
       await disconnect();
       trayManager.removeListener(this);
