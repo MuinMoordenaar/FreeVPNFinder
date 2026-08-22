@@ -35,13 +35,24 @@ class SingBoxEngine {
     throw StateError('sing-box.exe is missing from the core folder');
   }
 
-  Future<void> start(VpnNode node, ConnectionMode mode) async {
+  Future<void> start(
+    VpnNode node,
+    ConnectionMode mode, {
+    SplitTunnelSettings? splitTunneling,
+  }) async {
     await stop();
     final config = File(
       '${storage.root.path}${Platform.pathSeparator}active-config.json',
     );
     await config.writeAsString(
-      jsonEncode(configBuilder.build(node, mode, proxyPort: proxyPort)),
+      jsonEncode(
+        configBuilder.build(
+          node,
+          mode,
+          proxyPort: proxyPort,
+          splitTunneling: splitTunneling,
+        ),
+      ),
       flush: true,
     );
     final binary = await binaryPath;

@@ -23,6 +23,66 @@ enum AppPhase {
 
 enum NodeState { unknown, checking, working, failed, cooldown, active, standby }
 
+enum SplitTunnelMode { bypass, vpnOnly }
+
+class SplitTunnelApp {
+  SplitTunnelApp({required this.name, required this.path, this.enabled = true});
+  final String name;
+  final String path;
+  bool enabled;
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'path': path,
+    'enabled': enabled,
+  };
+
+  factory SplitTunnelApp.fromJson(Map<String, dynamic> json) => SplitTunnelApp(
+    name: json['name'] as String? ?? 'Application',
+    path: json['path'] as String? ?? '',
+    enabled: json['enabled'] as bool? ?? true,
+  );
+}
+
+class SplitTunnelSettings {
+  SplitTunnelSettings({
+    this.enabled = false,
+    this.mode = SplitTunnelMode.bypass,
+    List<SplitTunnelApp>? applications,
+    List<String>? domains,
+  }) : applications = applications ?? [],
+       domains = domains ?? [];
+
+  bool enabled;
+  SplitTunnelMode mode;
+  final List<SplitTunnelApp> applications;
+  final List<String> domains;
+
+  Map<String, dynamic> toJson() => {
+    'enabled': enabled,
+    'mode': mode.name,
+    'applications': applications.map((e) => e.toJson()).toList(),
+    'domains': domains,
+  };
+
+  factory SplitTunnelSettings.fromJson(Map<String, dynamic> json) =>
+      SplitTunnelSettings(
+        enabled: json['enabled'] as bool? ?? false,
+        mode: SplitTunnelMode.values.firstWhere(
+          (value) => value.name == json['mode'],
+          orElse: () => SplitTunnelMode.bypass,
+        ),
+        applications: [
+          for (final item in (json['applications'] as List? ?? const []))
+            SplitTunnelApp.fromJson(Map<String, dynamic>.from(item as Map)),
+        ],
+        domains: [
+          for (final item in (json['domains'] as List? ?? const []))
+            item.toString(),
+        ],
+      );
+}
+
 class VpnNode {
   VpnNode({
     required this.id,
@@ -176,13 +236,15 @@ class AppSettings {
     this.failoverCooldownSeconds = 300,
     this.healthIntervalSeconds = 15,
     this.startMinimized = false,
-  });
+    SplitTunnelSettings? splitTunneling,
+  }) : splitTunneling = splitTunneling ?? SplitTunnelSettings();
   ConnectionMode mode;
   bool autoQualityFailover, startMinimized;
   int qualityLatencyMs,
       failureThreshold,
       failoverCooldownSeconds,
       healthIntervalSeconds;
+  SplitTunnelSettings splitTunneling;
   Map<String, dynamic> toJson() => {
     'mode': mode.name,
     'autoQualityFailover': autoQualityFailover,
@@ -191,6 +253,7 @@ class AppSettings {
     'failoverCooldownSeconds': failoverCooldownSeconds,
     'healthIntervalSeconds': healthIntervalSeconds,
     'startMinimized': startMinimized,
+    'splitTunneling': splitTunneling.toJson(),
   };
   factory AppSettings.fromJson(Map<String, dynamic> j) => AppSettings(
     mode:
@@ -202,5 +265,8 @@ class AppSettings {
     failoverCooldownSeconds: j['failoverCooldownSeconds'] ?? 300,
     healthIntervalSeconds: j['healthIntervalSeconds'] ?? 15,
     startMinimized: j['startMinimized'] ?? false,
+    splitTunneling: SplitTunnelSettings.fromJson(
+      Map<String, dynamic>.from(j['splitTunneling'] ?? {}),
+    ),
   );
 }

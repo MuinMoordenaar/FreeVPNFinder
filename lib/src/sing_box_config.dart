@@ -6,6 +6,7 @@ class SingBoxConfigBuilder {
     ConnectionMode mode, {
     int proxyPort = 2080,
     bool testOnly = false,
+    SplitTunnelSettings? splitTunneling,
   }) {
     final inbounds = <Map<String, dynamic>>[
       {
@@ -25,12 +26,73 @@ class SingBoxConfigBuilder {
           'stack': 'mixed',
         },
     ];
+    final split = splitTunneling;
+    final splitEnabled =
+        mode == ConnectionMode.vpn && !testOnly && split?.enabled == true;
+    final outbounds = <Map<String, dynamic>>[
+      _outbound(node),
+      if (splitEnabled) {'type': 'direct', 'tag': 'direct'},
+    ];
+    final routeRules = <Map<String, dynamic>>[];
+    if (splitEnabled && split != null) {
+      routeRules.add({'action': 'hijack-dns'});
+      routeRules.add({'action': 'sniff'});
+      final target = split.mode == SplitTunnelMode.bypass
+          ? 'direct'
+          : 'selected';
+      for (final domain in split.domains) {
+        final normalized = _normalizeDomain(domain);
+        if (normalized.isNotEmpty) {
+          routeRules.add({
+            'domain_suffix': [normalized],
+            'outbound': target,
+          });
+        }
+      }
+      for (final app in split.applications.where((app) => app.enabled)) {
+        if (app.path.trim().isNotEmpty) {
+          routeRules.add({
+            'process_path': [app.path.trim()],
+            'outbound': target,
+          });
+        }
+      }
+    }
     return {
       'log': {'level': 'info', 'timestamp': true},
       'inbounds': inbounds,
-      'outbounds': [_outbound(node)],
-      'route': {'final': 'selected'},
+      'outbounds': outbounds,
+      if (splitEnabled)
+        'dns': {
+          'servers': [
+            {
+              'type': 'https',
+              'tag': 'remote-dns',
+              'server': '1.1.1.1',
+              'path': '/dns-query',
+              'detour': 'selected',
+            },
+          ],
+          'final': 'remote-dns',
+        },
+      'route': {
+        if (routeRules.isNotEmpty) 'rules': routeRules,
+        'final': splitEnabled && split!.mode == SplitTunnelMode.vpnOnly
+            ? 'direct'
+            : 'selected',
+      },
     };
+  }
+
+  String _normalizeDomain(String value) {
+    var domain = value.trim().toLowerCase();
+    if (domain.startsWith('*.')) domain = domain.substring(2);
+    if (domain.startsWith('https://')) domain = domain.substring(8);
+    if (domain.startsWith('http://')) domain = domain.substring(7);
+    domain = domain.split('/').first.split(':').first;
+    return domain.endsWith('.')
+        ? domain.substring(0, domain.length - 1)
+        : domain;
   }
 
   Map<String, dynamic> _outbound(VpnNode n) {
