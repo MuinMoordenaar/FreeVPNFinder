@@ -10,6 +10,7 @@ const bg = Color(0xFF090C12),
     panel = Color(0xFF151517),
     blue = Color(0xFFF2F2F2),
     cyan = Color(0xFFB8B8BC);
+const appVersion = '1.1.7';
 
 class FreeVpnFinderApp extends StatelessWidget {
   const FreeVpnFinderApp({super.key, required this.controller});
@@ -200,9 +201,20 @@ class _Home extends StatelessWidget {
           padding: const EdgeInsets.only(left: 8),
           child: Row(
             children: [
-              const Text(
-                'Free VPN Finder',
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700),
+              const Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text(
+                    'Free VPN Finder',
+                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700),
+                  ),
+                  SizedBox(width: 10),
+                  Text(
+                    'v$appVersion',
+                    style: TextStyle(fontSize: 14, color: Colors.white38),
+                  ),
+                ],
               ),
               const Spacer(),
               DropdownButtonHideUnderline(
