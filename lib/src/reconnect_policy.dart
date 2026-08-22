@@ -11,3 +11,9 @@ List<VpnNode> recentConnectionCandidates(
       if (seen.add(node.fingerprint)) node,
   ];
 }
+
+int latencyOrder(VpnNode a, VpnNode b) =>
+    (a.latency ?? 1 << 30).compareTo(b.latency ?? 1 << 30);
+
+VpnNode lowestLatencyNode(Iterable<VpnNode> nodes) =>
+    nodes.reduce((a, b) => latencyOrder(a, b) <= 0 ? a : b);

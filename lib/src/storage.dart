@@ -69,7 +69,7 @@ class LocalStorage {
     required Iterable<String> backupFingerprints,
   }) => _write('connection_pool.json', {
     'activeFingerprint': activeFingerprint,
-    'backupFingerprints': backupFingerprints.take(5).toList(),
+    'backupFingerprints': backupFingerprints.take(10).toList(),
     'updatedAt': DateTime.now().toIso8601String(),
   });
   Future<List<VpnSource>?> loadSources() async {

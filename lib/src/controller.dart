@@ -14,7 +14,9 @@ import 'storage.dart';
 
 class AppController extends ChangeNotifier with TrayListener, WindowListener {
   static const _backupPoolSize = 10;
-  static const _backupProbeDelay = Duration(seconds: 3);
+  // Exactly one short probe at a time: this keeps background discovery quiet
+  // while still allowing the pool to converge on lower-latency nodes.
+  static const _backupProbeDelay = Duration(seconds: 20);
   static const _backupReplacementMarginMs = 20;
   final storage = LocalStorage();
   late final SourceRepository repository;
@@ -56,6 +58,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
         if (nodesByFingerprint[fingerprint] case final node?)
           node..state = NodeState.standby,
     ];
+    _sortAndTrimBackups();
     sources = await storage.loadSources() ?? SourceRepository.defaults.toList();
     trayManager.addListener(this);
     windowManager.addListener(this);
@@ -247,6 +250,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
       backups.add(previous);
     }
     backups.removeWhere((backup) => backup.fingerprint == node.fingerprint);
+    _sortAndTrimBackups();
     activeNode = node..state = NodeState.active;
     _preferredNode = node;
     node.recordSuccess(result.latency);
@@ -289,9 +293,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
           _log('Backup ${backups.length}/$_backupPoolSize ready: ${node.name}');
         } else {
           final slowest = backups.reduce(
-            (a, b) => (a.latency ?? 1 << 30) >= (b.latency ?? 1 << 30)
-                ? a
-                : b,
+            (a, b) => latencyOrder(a, b) >= 0 ? a : b,
           );
           if (result.latency + _backupReplacementMarginMs <
               (slowest.latency ?? 1 << 30)) {
@@ -305,6 +307,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
             );
           }
         }
+        _sortAndTrimBackups();
         await _persistPool();
         notifyListeners();
       }
@@ -369,9 +372,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
         DateTime.now().difference(_lastFailover!).inSeconds <
             settings.failoverCooldownSeconds)
       return;
-    final next = backups.reduce(
-      (a, b) => (a.latency ?? 1 << 30) <= (b.latency ?? 1 << 30) ? a : b,
-    );
+    final next = lowestLatencyNode(backups);
     backups.remove(next);
     await _persistPool();
     _setPhase(AppPhase.switching, 'Switching server…');
@@ -452,10 +453,24 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
 
   Future<void> _persistPool() => storage.saveConnectionPool(
     activeFingerprint: _preferredNode?.fingerprint,
-    backupFingerprints: backups
-        .where((node) => node.fingerprint != activeNode?.fingerprint)
-        .map((node) => node.fingerprint),
+    backupFingerprints: () {
+      final sorted =
+          backups
+              .where((node) => node.fingerprint != activeNode?.fingerprint)
+              .toList()
+            ..sort(latencyOrder);
+      return sorted.map((node) => node.fingerprint);
+    }(),
   );
+
+  void _sortAndTrimBackups() {
+    backups.sort(latencyOrder);
+    if (backups.length <= _backupPoolSize) return;
+    for (final node in backups.sublist(_backupPoolSize)) {
+      node.state = NodeState.working;
+    }
+    backups = backups.take(_backupPoolSize).toList();
+  }
 
   void _fail(String message) {
     error = message.replaceFirst('Bad state: ', '');

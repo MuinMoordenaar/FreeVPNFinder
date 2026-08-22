@@ -69,6 +69,18 @@ void main() {
     expect(candidates, [active, backup]);
   });
 
+  test('quality failover selects the lowest-ping backup', () {
+    final slow = parser.parseUri('trojan://slow@example.com:443#Slow', 'test')!
+      ..latency = 220;
+    final fast = parser.parseUri('trojan://fast@example.com:443#Fast', 'test')!
+      ..latency = 45;
+    final unknown = parser.parseUri(
+      'trojan://unknown@example.com:443#Unknown',
+      'test',
+    )!..latency = null;
+    expect(lowestLatencyNode([slow, unknown, fast]), fast);
+  });
+
   test('sing-box accepts generated configs for every MVP protocol', () async {
     final binary = File('core${Platform.pathSeparator}sing-box.exe')
         .absolute
