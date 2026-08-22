@@ -270,21 +270,31 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
         .where((n) => n.fingerprint != exclude?.fingerprint)
         .toList();
     try {
-      for (final node in nodes.where(
-        (n) =>
-            _eligible(n) &&
-            n.fingerprint != activeNode?.fingerprint &&
-            !backups.any((b) => b.fingerprint == n.fingerprint),
-      )) {
+      for (final node in _backgroundCandidates()) {
         if (_cancelRequested || !connected) break;
         await Future<void>.delayed(
           Duration(seconds: settings.backupProbeIntervalSeconds),
         );
         if (_cancelRequested || !connected) break;
 
-        final result = await engine.probe(node, port: 21950);
+        _log('Background check: ${node.name} (${node.protocol})');
+        ProbeResult result;
+        try {
+          result = await engine
+              .probe(node, port: 21950)
+              .timeout(const Duration(seconds: 12));
+        } on TimeoutException {
+          node.recordFailure();
+          _log('Backup candidate timed out: ${node.name}');
+          continue;
+        } catch (e) {
+          node.recordFailure();
+          _log('Backup candidate error: ${node.name}: $e');
+          continue;
+        }
         if (!result.ok) {
           node.recordFailure();
+          _log('Backup candidate failed: ${node.name}');
           continue;
         }
 
@@ -322,6 +332,48 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     }
     await storage.saveNodes(nodes);
     await _persistPool();
+  }
+
+  Iterable<VpnNode> _backgroundCandidates() sync* {
+    final groups = <String, List<VpnNode>>{};
+    for (final node in nodes) {
+      if (!_backgroundEligible(node) ||
+          node.fingerprint == activeNode?.fingerprint ||
+          backups.any((backup) => backup.fingerprint == node.fingerprint)) {
+        continue;
+      }
+      groups
+          .putIfAbsent('${node.sourceId}:${node.protocol}', () => [])
+          .add(node);
+    }
+
+    final queues = groups.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    for (final entry in queues) {
+      entry.value.sort((a, b) {
+        final checked = (a.lastCheckedAt ?? DateTime(0)).compareTo(
+          b.lastCheckedAt ?? DateTime(0),
+        );
+        return checked != 0 ? checked : a.fingerprint.compareTo(b.fingerprint);
+      });
+    }
+
+    var remaining = true;
+    while (remaining) {
+      remaining = false;
+      for (final entry in queues) {
+        if (entry.value.isEmpty) continue;
+        remaining = true;
+        yield entry.value.removeAt(0);
+      }
+    }
+  }
+
+  bool _backgroundEligible(VpnNode node) {
+    if (!_eligible(node)) return false;
+    final checkedAt = node.lastCheckedAt;
+    return checkedAt == null ||
+        DateTime.now().difference(checkedAt) >= const Duration(minutes: 5);
   }
 
   void _startHealthMonitor() {
