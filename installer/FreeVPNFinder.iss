@@ -1,5 +1,5 @@
 #define MyAppName "Free VPN Finder"
-#define MyAppVersion "1.1.9"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "Nezer"
 #define MyAppExeName "free_vpn_finder.exe"
 
@@ -45,6 +45,13 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\data"
+Type: filesandordirs; Name: "{app}\core"
+Type: files; Name: "{app}\*.dll"
+Type: files; Name: "{app}\free_vpn_finder.exe"
+Type: files; Name: "{app}\free_vpn_finder_updater.exe"
+
 [Code]
 var
   ActionPage: TInputOptionWizardPage;
@@ -52,7 +59,7 @@ var
 procedure InitializeWizard;
 begin
   ActionPage := CreateInputOptionPage(
-    wpWelcome,
+    wpSelectDir,
     'Choose action',
     '{#MyAppName}',
     'Select what you want to do:',

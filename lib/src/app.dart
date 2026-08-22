@@ -10,7 +10,7 @@ const bg = Color(0xFF090C12),
     panel = Color(0xFF151517),
     blue = Color(0xFFF2F2F2),
     cyan = Color(0xFFB8B8BC);
-const appVersion = '1.1.9';
+const appVersion = '1.2.0';
 
 class FreeVpnFinderApp extends StatelessWidget {
   const FreeVpnFinderApp({super.key, required this.controller});
