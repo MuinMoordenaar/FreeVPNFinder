@@ -34,7 +34,7 @@ class FreeVpnFinderApp extends StatelessWidget {
         color: panel,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(12),
           side: const BorderSide(color: Color(0xFF2B2B30)),
         ),
       ),
@@ -42,7 +42,7 @@ class FreeVpnFinderApp extends StatelessWidget {
         filled: true,
         fillColor: const Color(0xFF0D0D0F),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide.none,
         ),
       ),
@@ -50,9 +50,7 @@ class FreeVpnFinderApp extends StatelessWidget {
         style: FilledButton.styleFrom(
           backgroundColor: Colors.white,
           foregroundColor: const Color(0xFF101012),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       ),
     ),
@@ -70,11 +68,10 @@ class Dashboard extends StatefulWidget {
 class _DashboardState extends State<Dashboard> {
   int page = 0;
   static const nav = [
-    (Icons.shield_rounded, 'Connect'),
-    (Icons.radar_rounded, 'Sources'),
-    (Icons.add_link_rounded, 'Profiles'),
-    (Icons.tune_rounded, 'Settings'),
-    (Icons.terminal_rounded, 'Logs'),
+    (0, Icons.shield_rounded, 'Connect'),
+    (1, Icons.radar_rounded, 'Sources'),
+    (2, Icons.add_link_rounded, 'Profiles'),
+    (4, Icons.terminal_rounded, 'Logs'),
   ];
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
@@ -99,37 +96,26 @@ class _DashboardState extends State<Dashboard> {
                       ),
                       decoration: BoxDecoration(
                         color: const Color(0xFF111113),
-                        borderRadius: BorderRadius.circular(18),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: const Color(0xFF2B2B30)),
                       ),
                       child: Column(
                         children: [
-                          const Row(
-                            children: [
-                              SizedBox(width: 3),
-                              _MiniLogo(),
-                              SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  'Free VPN Finder',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: -.2,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                              ),
-                            ],
+                          _NavItem(
+                            icon: Icons.tune_rounded,
+                            label: 'Settings',
+                            selected: page == 3,
+                            onTap: () => setState(() => page = 3),
                           ),
-                          const SizedBox(height: 28),
+                          const SizedBox(height: 16),
                           for (var i = 0; i < nav.length; i++)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 6),
                               child: _NavItem(
-                                icon: nav[i].$1,
-                                label: nav[i].$2,
-                                selected: page == i,
-                                onTap: () => setState(() => page = i),
+                                icon: nav[i].$2,
+                                label: nav[i].$3,
+                                selected: page == nav[i].$1,
+                                onTap: () => setState(() => page = nav[i].$1),
                               ),
                             ),
                           const Spacer(),
@@ -137,7 +123,7 @@ class _DashboardState extends State<Dashboard> {
                             padding: const EdgeInsets.all(13),
                             decoration: BoxDecoration(
                               color: const Color(0xFF1B1B1E),
-                              borderRadius: BorderRadius.circular(13),
+                              borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(
                               children: [
@@ -216,13 +202,8 @@ class _Home extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Connect through a working route',
+                  'Free VPN Finder',
                   style: TextStyle(fontSize: 25, fontWeight: FontWeight.w700),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Find reachable public configurations automatically',
-                  style: TextStyle(color: Colors.white38),
                 ),
               ],
             ),
@@ -230,7 +211,7 @@ class _Home extends StatelessWidget {
             DropdownButtonHideUnderline(
               child: DropdownButton<ConnectionMode>(
                 value: c.settings.mode,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(10),
                 dropdownColor: const Color(0xFF1B1B1E),
                 items: [
                   for (final m in ConnectionMode.values)
@@ -784,10 +765,10 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Material(
     color: selected ? blue.withValues(alpha: .16) : Colors.transparent,
-    borderRadius: BorderRadius.circular(14),
+    borderRadius: BorderRadius.circular(10),
     child: InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(10),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
         child: Row(
@@ -808,15 +789,10 @@ class _NavItem extends StatelessWidget {
   );
 }
 
-class _MiniLogo extends StatelessWidget {
-  const _MiniLogo();
-  @override
-  Widget build(BuildContext context) => const _BrandMark(size: 38);
-}
-
 class _BrandMark extends StatelessWidget {
-  const _BrandMark({required this.size});
+  const _BrandMark({required this.size, required this.inverted});
   final double size;
+  final bool inverted;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -825,13 +801,15 @@ class _BrandMark extends StatelessWidget {
     alignment: Alignment.center,
     decoration: BoxDecoration(
       shape: BoxShape.circle,
-      color: Colors.white,
-      border: Border.all(color: const Color(0xFFB8B8BC)),
+      color: inverted ? const Color(0xFF0B1018) : Colors.white,
+      border: Border.all(
+        color: inverted ? const Color(0xFFB8B8BC) : const Color(0xFF101012),
+      ),
     ),
     child: Text(
       'F',
       style: TextStyle(
-        color: const Color(0xFF101012),
+        color: inverted ? Colors.white : const Color(0xFF101012),
         fontSize: size * .62,
         height: .9,
         fontWeight: FontWeight.w800,
@@ -964,7 +942,7 @@ class _ConnectButtonState extends State<_ConnectButton>
   @override
   Widget build(BuildContext context) {
     final color = widget.active
-        ? Colors.white
+        ? const Color(0xFF0B1018)
         : widget.error
         ? const Color(0xFFB8B8BC)
         : cyan;
@@ -992,9 +970,11 @@ class _ConnectButtonState extends State<_ConnectButton>
           padding: EdgeInsets.all(widget.active ? 7 : 5),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: color.withValues(alpha: .12),
+            color: widget.active ? Colors.white : color.withValues(alpha: .12),
             border: Border.all(
-              color: color.withValues(alpha: widget.active ? .9 : .58),
+              color: widget.active
+                  ? Colors.white
+                  : color.withValues(alpha: .58),
               width: widget.active ? 3 : 2,
             ),
             boxShadow: [
@@ -1025,7 +1005,7 @@ class _ConnectButtonState extends State<_ConnectButton>
                   child: AnimatedScale(
                     duration: const Duration(milliseconds: 420),
                     scale: widget.active ? 1.08 : .92,
-                    child: const _BrandMark(size: 104),
+                    child: _BrandMark(size: 104, inverted: widget.active),
                   ),
                 ),
                 if (widget.busy)
@@ -1037,33 +1017,6 @@ class _ConnectButtonState extends State<_ConnectButton>
                       color: color,
                     ),
                   ),
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 360),
-                  curve: Curves.easeOutBack,
-                  right: widget.active ? 14 : 22,
-                  bottom: widget.active ? 14 : 22,
-                  child: AnimatedScale(
-                    duration: const Duration(milliseconds: 360),
-                    scale: widget.active ? 1 : 0,
-                    child: Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white,
-                        border: Border.all(
-                          color: const Color(0xFF101012),
-                          width: 4,
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.check_rounded,
-                        size: 19,
-                        color: Color(0xFF111113),
-                      ),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),

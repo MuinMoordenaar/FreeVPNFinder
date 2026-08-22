@@ -98,6 +98,11 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   }
 
   @override
+  void onTrayIconRightMouseDown() async {
+    await trayManager.popUpContextMenu();
+  }
+
+  @override
   void onTrayMenuItemClick(MenuItem item) async {
     if (item.key == 'show') onTrayIconMouseDown();
     if (item.key == 'toggle') await toggleConnection();
