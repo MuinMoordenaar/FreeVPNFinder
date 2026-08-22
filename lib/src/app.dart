@@ -799,12 +799,15 @@ class _BrandMark extends StatelessWidget {
   Widget build(BuildContext context) => SizedBox(
     width: size,
     height: size,
-    child: ColorFiltered(
-      colorFilter: ColorFilter.mode(
-        inverted ? const Color(0xFF101012) : Colors.white,
-        BlendMode.srcIn,
+    child: Transform.translate(
+      offset: const Offset(0, 6),
+      child: ColorFiltered(
+        colorFilter: ColorFilter.mode(
+          inverted ? const Color(0xFF101012) : Colors.white,
+          BlendMode.srcIn,
+        ),
+        child: Image.asset('assets/brand_logo.png', fit: BoxFit.contain),
       ),
-      child: Image.asset('assets/brand_logo.png', fit: BoxFit.contain),
     ),
   );
 }
