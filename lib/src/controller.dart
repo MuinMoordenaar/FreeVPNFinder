@@ -14,7 +14,7 @@ import 'storage.dart';
 
 class AppController extends ChangeNotifier with TrayListener, WindowListener {
   static const _backupReplacementMarginMs = 0;
-  static const _backgroundProbeConcurrency = 3;
+  static const _backgroundProbeConcurrency = 4;
   final storage = LocalStorage();
   late final SourceRepository repository;
   late final SingBoxEngine engine;
@@ -348,8 +348,8 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     _log('Background check: ${node.name} (${node.protocol})');
     try {
       final result = await engine
-          .probe(node, port: 0, timeout: const Duration(seconds: 5))
-          .timeout(const Duration(seconds: 8));
+          .probe(node, port: 0, timeout: const Duration(seconds: 3))
+          .timeout(const Duration(seconds: 5));
       return (node: node, result: result);
     } catch (e) {
       return (node: node, result: ProbeResult(false, 0, '$e'));
