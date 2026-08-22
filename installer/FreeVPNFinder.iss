@@ -12,7 +12,7 @@ AppCopyright=Free VPN Finder, made by Nezer
 DefaultDirName={autopf}\FreeVPN Finder
 DefaultGroupName={#MyAppName}
 OutputDir=..\releases
-OutputBaseFilename=FreeVPNFinder-Setup-v{#MyAppVersion}
+OutputBaseFilename=FreeVPNFinder-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -44,3 +44,48 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+var
+  ActionPage: TInputOptionWizardPage;
+
+procedure InitializeWizard;
+begin
+  ActionPage := CreateInputOptionPage(
+    wpWelcome,
+    'Choose action',
+    '{#MyAppName}',
+    'Select what you want to do:',
+    True,
+    False
+  );
+  ActionPage.Add('Install or update to the latest version');
+  ActionPage.Add('Uninstall {#MyAppName}');
+  ActionPage.SelectedValueIndex := 0;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  Uninstaller: string;
+  ErrorCode: Integer;
+begin
+  Result := True;
+  if CurPageID = ActionPage.ID then
+  begin
+    if ActionPage.SelectedValueIndex = 1 then
+    begin
+      Uninstaller := ExpandConstant('{app}\unins000.exe');
+      if FileExists(Uninstaller) then
+      begin
+        if MsgBox('Remove {#MyAppName} from this computer?', mbConfirmation, MB_YESNO) = IDYES then
+        begin
+          Exec(Uninstaller, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_SHOWNORMAL, ewWaitUntilTerminated, ErrorCode);
+          WizardForm.Close;
+        end;
+      end
+      else
+        MsgBox('No existing installation was found.', mbInformation, MB_OK);
+      Result := False;
+    end;
+  end;
+end;
