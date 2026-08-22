@@ -339,7 +339,7 @@ class _Home extends StatelessWidget {
                         children: [
                           _Stat(
                             label: 'Backup nodes',
-                            value: '${c.backups.length} / 5',
+                            value: '${c.backups.length} / 10',
                           ),
                           _Stat(
                             label: 'Auto quality switch',

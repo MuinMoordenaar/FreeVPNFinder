@@ -1,6 +1,6 @@
 # Free VPN Finder
 
-Windows 10/11 MVP built with Flutter and sing-box. The app downloads public share-link subscriptions, normalizes and deduplicates nodes, verifies them through real HTTP-over-proxy requests, keeps five warm backups, and switches after hard failures or sustained poor quality.
+Windows 10/11 MVP built with Flutter and sing-box. The app downloads public share-link subscriptions, normalizes and deduplicates nodes, verifies them through real HTTP-over-proxy requests, keeps ten warm backups, gradually refreshes them in the background, and switches after hard failures or sustained poor quality.
 
 ## Features
 
@@ -8,8 +8,8 @@ Windows 10/11 MVP built with Flutter and sing-box. The app downloads public shar
 - VLESS/Reality, VMess, Trojan, Shadowsocks, Hysteria2, and TUIC share links
 - Three built-in sources plus custom URI and subscription import
 - offline source cache and JSON state in `%AppData%`
-- sequential first-working-node discovery and five-node backup pool
-- hard failover and latency failover with hysteresis/cooldown
+- sequential first-working-node discovery and ten-node backup pool with low-impact background refresh
+- hard failover and latency failover to the lowest-ping backup with replacement margin/cooldown
 - tray, settings, activity log, and polished dark UI
 
 ## Build

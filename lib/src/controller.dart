@@ -13,6 +13,9 @@ import 'sources.dart';
 import 'storage.dart';
 
 class AppController extends ChangeNotifier with TrayListener, WindowListener {
+  static const _backupPoolSize = 10;
+  static const _backupProbeDelay = Duration(seconds: 3);
+  static const _backupReplacementMarginMs = 20;
   final storage = LocalStorage();
   late final SourceRepository repository;
   late final SingBoxEngine engine;
@@ -32,6 +35,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   bool _cancelRequested = false;
   bool _operationInFlight = false;
   bool _shuttingDown = false;
+  bool _backupRefreshRunning = false;
 
   bool get connected =>
       phase == AppPhase.connected || phase == AppPhase.degraded;
@@ -251,27 +255,57 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   }
 
   Future<void> _fillBackups({VpnNode? exclude}) async {
+    if (_backupRefreshRunning) return;
+    _backupRefreshRunning = true;
     backups = backups
         .where((n) => n.fingerprint != exclude?.fingerprint)
         .toList();
-    for (final node in nodes.where(
-      (n) =>
-          _eligible(n) &&
-          n.fingerprint != activeNode?.fingerprint &&
-          !backups.any((b) => b.fingerprint == n.fingerprint),
-    )) {
-      if (_cancelRequested || !connected || backups.length >= 5) break;
-      final result = await engine.probe(node, port: 21950);
-      if (result.ok) {
+    try {
+      for (final node in nodes.where(
+        (n) =>
+            _eligible(n) &&
+            n.fingerprint != activeNode?.fingerprint &&
+            !backups.any((b) => b.fingerprint == n.fingerprint),
+      )) {
+        if (_cancelRequested || !connected) break;
+        await Future<void>.delayed(_backupProbeDelay);
+        if (_cancelRequested || !connected) break;
+
+        final result = await engine.probe(node, port: 21950);
+        if (!result.ok) {
+          node.recordFailure();
+          continue;
+        }
+
         node.recordSuccess(result.latency);
         node.state = NodeState.standby;
-        backups.add(node);
-        _log('Backup ${backups.length}/5 ready: ${node.name}');
+        if (backups.length < _backupPoolSize) {
+          backups.add(node);
+          _log('Backup ${backups.length}/$_backupPoolSize ready: ${node.name}');
+        } else {
+          final slowest = backups.reduce(
+            (a, b) => (a.latency ?? 1 << 30) >= (b.latency ?? 1 << 30)
+                ? a
+                : b,
+          );
+          if (result.latency + _backupReplacementMarginMs <
+              (slowest.latency ?? 1 << 30)) {
+            slowest.state = NodeState.working;
+            backups
+              ..remove(slowest)
+              ..add(node);
+            _log(
+              'Backup replaced: ${slowest.name} → ${node.name} '
+              '(${result.latency} ms)',
+            );
+          }
+        }
         await _persistPool();
         notifyListeners();
-      } else {
-        node.recordFailure();
       }
+      await storage.saveNodes(nodes);
+    } finally {
+      _backupRefreshRunning = false;
     }
     await storage.saveNodes(nodes);
     await _persistPool();
@@ -330,14 +364,9 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
         DateTime.now().difference(_lastFailover!).inSeconds <
             settings.failoverCooldownSeconds)
       return;
-    final next = backups.reduce((a, b) => a.score >= b.score ? a : b);
-    if (!hard &&
-        activeNode?.latency != null &&
-        next.latency != null &&
-        next.latency! > activeNode!.latency! * .7) {
-      _qualityFailures = 0;
-      return;
-    }
+    final next = backups.reduce(
+      (a, b) => (a.latency ?? 1 << 30) <= (b.latency ?? 1 << 30) ? a : b,
+    );
     backups.remove(next);
     await _persistPool();
     _setPhase(AppPhase.switching, 'Switching server…');
