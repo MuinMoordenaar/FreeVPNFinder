@@ -74,14 +74,55 @@ class AppUpdater {
     );
     await installer.writeAsBytes(bytes, flush: true);
     final installDir = File(Platform.resolvedExecutable).parent.path;
+    final log = '${temp.path}${Platform.pathSeparator}update.log';
+    final script = File(
+      '${temp.path}${Platform.pathSeparator}run-installer.ps1',
+    );
+    await script.writeAsString(r'''
+param([int]$ProcessId, [string]$Installer, [string]$InstallDir, [string]$Exe, [string]$Log)
+$ErrorActionPreference = 'Stop'
+function Log([string]$Message) {
+  Add-Content -LiteralPath $Log -Value ("[{0}] {1}" -f (Get-Date -Format o), $Message)
+}
+try {
+  Log 'Waiting for the old application to exit'
+  while (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) {
+    Start-Sleep -Milliseconds 300
+  }
+  Log "Starting installer for $InstallDir"
+  $args = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS',
+    "/DIR=$InstallDir", "/LOG=$Log")
+  $result = Start-Process -FilePath $Installer -ArgumentList $args -Verb RunAs -Wait -PassThru
+  if ($result.ExitCode -ne 0) { throw "Installer exited with code $($result.ExitCode)" }
+  if (-not (Test-Path -LiteralPath $Exe)) { throw "Updated executable was not found: $Exe" }
+  Log 'Installation completed; launching the new version'
+  Start-Process -FilePath $Exe -WorkingDirectory $InstallDir
+} catch {
+  Log ("Update failed: " + $_.Exception.Message)
+} finally {
+  Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+}
+''');
     await Process.start(
-      installer.path,
+      'powershell.exe',
       [
-        '/VERYSILENT',
-        '/SUPPRESSMSGBOXES',
-        '/NORESTART',
-        '/CLOSEAPPLICATIONS',
-        '/DIR="$installDir"',
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-WindowStyle',
+        'Hidden',
+        '-File',
+        script.path,
+        '-ProcessId',
+        pid.toString(),
+        '-Installer',
+        installer.path,
+        '-InstallDir',
+        installDir,
+        '-Exe',
+        Platform.resolvedExecutable,
+        '-Log',
+        log,
       ],
       mode: ProcessStartMode.detached,
       workingDirectory: temp.path,
