@@ -16,8 +16,8 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   static const _backupPoolSize = 10;
   // Exactly one short probe at a time: this keeps background discovery quiet
   // while still allowing the pool to converge on lower-latency nodes.
-  static const _backupProbeDelay = Duration(seconds: 20);
-  static const _backupReplacementMarginMs = 20;
+  static const _backupProbeDelay = Duration(seconds: 5);
+  static const _backupReplacementMarginMs = 0;
   final storage = LocalStorage();
   late final SourceRepository repository;
   late final SingBoxEngine engine;
