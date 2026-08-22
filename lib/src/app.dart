@@ -13,7 +13,7 @@ const bg = Color(0xFF090C12),
     panel = Color(0xFF151517),
     blue = Color(0xFFF2F2F2),
     cyan = Color(0xFFB8B8BC);
-const appVersion = '1.2.2';
+const appVersion = '1.2.3';
 const latestReleaseApi =
     'https://api.github.com/repos/MuinMoordenaar/FreeVPNFinder/releases/latest';
 
@@ -364,8 +364,7 @@ class _HomeState extends State<_Home> {
                       ),
                     ),
                     const SizedBox(height: 14),
-                    SizedBox(
-                      height: 216,
+                    Expanded(
                       child: _InfoCard(
                         title: 'FAILOVER',
                         icon: Icons.swap_horiz_rounded,
@@ -374,13 +373,7 @@ class _HomeState extends State<_Home> {
                             label: 'Backup nodes',
                             value: '${c.backups.length} / 10',
                           ),
-                          _Stat(
-                            label: 'Auto quality switch',
-                            value: c.settings.autoQualityFailover
-                                ? 'On'
-                                : 'Off',
-                          ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: 2),
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton.icon(
@@ -390,6 +383,30 @@ class _HomeState extends State<_Home> {
                               icon: const Icon(Icons.shuffle_rounded, size: 18),
                               label: const Text('Switch server'),
                             ),
+                          ),
+                          const SizedBox(height: 12),
+                          Expanded(
+                            child: c.backups.isEmpty
+                                ? const Center(
+                                    child: Text(
+                                      'Backup nodes are being prepared',
+                                      style: TextStyle(color: Colors.white38),
+                                    ),
+                                  )
+                                : ListView.separated(
+                                    itemCount: c.backups.length,
+                                    separatorBuilder: (_, _) =>
+                                        const Divider(height: 1),
+                                    itemBuilder: (_, index) {
+                                      final node = c.backups[index];
+                                      return _BackupNode(
+                                        node: node,
+                                        enabled: active,
+                                        onConnect: () =>
+                                            c.connectToBackup(node),
+                                      );
+                                    },
+                                  ),
                           ),
                         ],
                       ),
@@ -797,6 +814,39 @@ class _SliderSetting extends StatelessWidget {
           onChanged: onChanged,
         ),
       ],
+    ),
+  );
+}
+
+class _BackupNode extends StatelessWidget {
+  const _BackupNode({
+    required this.node,
+    required this.enabled,
+    required this.onConnect,
+  });
+  final VpnNode node;
+  final bool enabled;
+  final Future<void> Function() onConnect;
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    dense: true,
+    contentPadding: EdgeInsets.zero,
+    title: Text(
+      node.name,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+    ),
+    subtitle: Text(
+      '${node.protocol.toUpperCase()} • ${node.latency ?? '—'} ms',
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(fontSize: 11, color: Colors.white38),
+    ),
+    trailing: TextButton(
+      onPressed: enabled ? onConnect : null,
+      child: const Text('Connect'),
     ),
   );
 }

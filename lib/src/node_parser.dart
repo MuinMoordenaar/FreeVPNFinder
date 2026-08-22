@@ -9,7 +9,6 @@ class NodeParser {
     'vless',
     'vmess',
     'trojan',
-    'ss',
     'hysteria2',
     'hy2',
     'tuic',
@@ -39,8 +38,6 @@ class NodeParser {
     try {
       if (raw.toLowerCase().startsWith('vmess://'))
         return _vmess(raw, sourceId);
-      if (raw.toLowerCase().startsWith('ss://'))
-        return _shadowsocks(raw, sourceId);
       final uri = Uri.parse(raw);
       final protocol = uri.scheme == 'hy2'
           ? 'hysteria2'
@@ -90,39 +87,6 @@ class NodeParser {
         'host': '${map['host'] ?? ''}',
         'tls': '${map['tls'] ?? ''}',
         'sni': '${map['sni'] ?? ''}',
-      },
-    );
-  }
-
-  VpnNode? _shadowsocks(String raw, String sourceId) {
-    var body = raw.substring(5);
-    final hash = body.indexOf('#');
-    final name = hash >= 0
-        ? Uri.decodeComponent(body.substring(hash + 1))
-        : 'Shadowsocks';
-    if (hash >= 0) body = body.substring(0, hash);
-    body = body.split('?').first;
-    if (!body.contains('@'))
-      body = utf8.decode(base64.decode(base64.normalize(body)));
-    final at = body.lastIndexOf('@');
-    if (at < 0) return null;
-    var credentials = body.substring(0, at);
-    if (!credentials.contains(':'))
-      credentials = utf8.decode(base64.decode(base64.normalize(credentials)));
-    final endpoint = body.substring(at + 1);
-    final colon = endpoint.lastIndexOf(':');
-    final methodSep = credentials.indexOf(':');
-    if (colon < 1 || methodSep < 1) return null;
-    return _make(
-      raw,
-      sourceId,
-      'shadowsocks',
-      endpoint.substring(0, colon),
-      int.parse(endpoint.substring(colon + 1)),
-      name,
-      {
-        'method': credentials.substring(0, methodSep),
-        'credential': credentials.substring(methodSep + 1),
       },
     );
   }

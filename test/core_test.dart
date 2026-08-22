@@ -56,6 +56,16 @@ void main() {
     expect(a.fingerprint, b.fingerprint);
   });
 
+  test('ignores Shadowsocks links', () {
+    expect(
+      parser.parseUri(
+        'ss://YWVzLTEyOC1nY206cGFzc3dvcmQ@example.com:8388#SS',
+        'test',
+      ),
+      isNull,
+    );
+  });
+
   test('recent reconnect tries the previous active node before backups', () {
     final active = parser.parseUri(
       'trojan://active@example.com:443#Active',
@@ -88,7 +98,6 @@ void main() {
     final samples = [
       'vless://11111111-1111-1111-1111-111111111111@example.com:443#VLESS',
       'trojan://secret@example.com:443?sni=example.com#Trojan',
-      'ss://YWVzLTEyOC1nY206cGFzc3dvcmQ@example.com:8388#SS',
       'hysteria2://secret@example.com:443?sni=example.com#HY2',
       'tuic://11111111-1111-1111-1111-111111111111:secret@example.com:443?sni=example.com#TUIC',
     ];

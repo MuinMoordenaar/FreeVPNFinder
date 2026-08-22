@@ -47,7 +47,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     repository = SourceRepository(storage);
     engine = SingBoxEngine(storage);
     settings = await storage.loadSettings();
-    nodes = await storage.loadNodes();
+    nodes = (await storage.loadNodes()).where(_supported).toList();
     final savedPool = await storage.loadConnectionPool();
     final nodesByFingerprint = {
       for (final node in nodes) node.fingerprint: node,
@@ -196,6 +196,7 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   ) async {
     for (final node in candidates) {
       if (_cancelRequested) return null;
+      if (!_eligible(node)) continue;
       if (!attempted.add(node.fingerprint)) continue;
       tested++;
       node.state = NodeState.checking;
@@ -212,10 +213,13 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     return null;
   }
 
+  bool _supported(VpnNode n) => n.protocol != 'shadowsocks';
+
   bool _eligible(VpnNode n) =>
-      n.state != NodeState.cooldown ||
-      n.lastFailureAt == null ||
-      DateTime.now().difference(n.lastFailureAt!).inHours >= 1;
+      _supported(n) &&
+      (n.state != NodeState.cooldown ||
+          n.lastFailureAt == null ||
+          DateTime.now().difference(n.lastFailureAt!).inHours >= 1);
 
   Future<void> refreshSources() async {
     _setPhase(AppPhase.updatingSources, 'Updating server sources…');
@@ -373,7 +377,19 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
             settings.failoverCooldownSeconds)
       return;
     final next = lowestLatencyNode(backups);
-    backups.remove(next);
+    await _switchToBackup(next);
+  }
+
+  Future<void> connectToBackup(VpnNode node) async {
+    if (!connected ||
+        !backups.any((backup) => backup.fingerprint == node.fingerprint)) {
+      return;
+    }
+    await _switchToBackup(node);
+  }
+
+  Future<void> _switchToBackup(VpnNode next) async {
+    backups.removeWhere((backup) => backup.fingerprint == next.fingerprint);
     await _persistPool();
     _setPhase(AppPhase.switching, 'Switching server…');
     try {
