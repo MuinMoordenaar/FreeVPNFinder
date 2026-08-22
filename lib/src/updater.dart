@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
-const appVersion = '1.1.8';
+const appVersion = '1.1.9';
 const latestReleaseApi =
     'https://api.github.com/repos/MuinMoordenaar/FreeVPNFinder/releases/latest';
 
