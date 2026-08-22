@@ -16,15 +16,6 @@ add_executable(${BINARY_NAME} WIN32
   "runner.exe.manifest"
 )
 
-add_executable(free_vpn_finder_updater "update_helper.cpp")
-apply_standard_settings(free_vpn_finder_updater)
-target_link_libraries(free_vpn_finder_updater PRIVATE shell32)
-foreach(OUTPUTCONFIG Debug Release Profile)
-  string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG_UPPER)
-  set_target_properties(free_vpn_finder_updater PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} "${CMAKE_CURRENT_BINARY_DIR}/${OUTPUTCONFIG}")
-endforeach()
-
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})

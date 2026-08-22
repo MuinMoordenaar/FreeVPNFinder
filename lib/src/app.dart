@@ -1,5 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' show pi, sin;
 
+import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -11,6 +14,8 @@ const bg = Color(0xFF090C12),
     blue = Color(0xFFF2F2F2),
     cyan = Color(0xFFB8B8BC);
 const appVersion = '1.2.0';
+const latestReleaseApi =
+    'https://api.github.com/repos/MuinMoordenaar/FreeVPNFinder/releases/latest';
 
 class FreeVpnFinderApp extends StatelessWidget {
   const FreeVpnFinderApp({super.key, required this.controller});
@@ -467,9 +472,91 @@ class _ProfilesState extends State<_Profiles> {
   );
 }
 
-class _Settings extends StatelessWidget {
+class _Settings extends StatefulWidget {
   const _Settings(this.c);
   final AppController c;
+
+  @override
+  State<_Settings> createState() => _SettingsState();
+}
+
+class _SettingsState extends State<_Settings> {
+  bool checking = false;
+
+  Future<void> checkForUpdates() async {
+    setState(() => checking = true);
+    try {
+      final response = await http
+          .get(
+            Uri.parse(latestReleaseApi),
+            headers: {'Accept': 'application/vnd.github+json'},
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) throw Exception('GitHub error');
+      final release = jsonDecode(response.body) as Map<String, dynamic>;
+      final latest = (release['tag_name'] as String? ?? '').replaceFirst(
+        'v',
+        '',
+      );
+      final assets = (release['assets'] as List<dynamic>? ?? const []);
+      final zip = assets.cast<Map<String, dynamic>>().firstWhere(
+        (asset) =>
+            (asset['name'] as String? ?? '').toLowerCase().endsWith('.zip'),
+        orElse: () => <String, dynamic>{},
+      );
+      if (!mounted) return;
+      if (latest.isEmpty || _compareVersions(latest, appVersion) <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Установлена последняя версия.')),
+        );
+      } else if (zip['browser_download_url'] is String) {
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('Доступна версия $latest'),
+            content: const Text('Откроется скачивание portable ZIP-архива.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Отмена'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Process.start('explorer.exe', [
+                    zip['browser_download_url'] as String,
+                  ]);
+                  Navigator.pop(context);
+                },
+                child: const Text('Скачать ZIP'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        throw Exception('ZIP asset is missing');
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось проверить обновления.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => checking = false);
+    }
+  }
+
+  int _compareVersions(String a, String b) {
+    final left = a.split('.').map((part) => int.tryParse(part) ?? 0).toList();
+    final right = b.split('.').map((part) => int.tryParse(part) ?? 0).toList();
+    for (var i = 0; i < 3; i++) {
+      final difference =
+          (i < left.length ? left[i] : 0) - (i < right.length ? right[i] : 0);
+      if (difference != 0) return difference.sign;
+    }
+    return 0;
+  }
+
   @override
   Widget build(BuildContext context) => _Page(
     title: 'Settings',
@@ -484,49 +571,69 @@ class _Settings extends StatelessWidget {
                 subtitle: const Text(
                   'Switch after repeated slow health checks',
                 ),
-                value: c.settings.autoQualityFailover,
+                value: widget.c.settings.autoQualityFailover,
                 onChanged: (v) {
-                  c.settings.autoQualityFailover = v;
-                  c.saveSettings();
+                  widget.c.settings.autoQualityFailover = v;
+                  widget.c.saveSettings();
                 },
               ),
               const Divider(height: 1),
               _SliderSetting(
                 title: 'Poor latency threshold',
-                value: c.settings.qualityLatencyMs.toDouble(),
+                value: widget.c.settings.qualityLatencyMs.toDouble(),
                 min: 300,
                 max: 2000,
                 suffix: 'ms',
                 onChanged: (v) {
-                  c.settings.qualityLatencyMs = v.round();
-                  c.saveSettings();
+                  widget.c.settings.qualityLatencyMs = v.round();
+                  widget.c.saveSettings();
                 },
               ),
               const Divider(height: 1),
               _SliderSetting(
                 title: 'Consecutive failures',
-                value: c.settings.failureThreshold.toDouble(),
+                value: widget.c.settings.failureThreshold.toDouble(),
                 min: 2,
                 max: 6,
                 suffix: '',
                 onChanged: (v) {
-                  c.settings.failureThreshold = v.round();
-                  c.saveSettings();
+                  widget.c.settings.failureThreshold = v.round();
+                  widget.c.saveSettings();
                 },
               ),
               const Divider(height: 1),
               _SliderSetting(
                 title: 'Health-check interval',
-                value: c.settings.healthIntervalSeconds.toDouble(),
+                value: widget.c.settings.healthIntervalSeconds.toDouble(),
                 min: 10,
                 max: 60,
                 suffix: 's',
                 onChanged: (v) {
-                  c.settings.healthIntervalSeconds = v.round();
-                  c.saveSettings();
+                  widget.c.settings.healthIntervalSeconds = v.round();
+                  widget.c.saveSettings();
                 },
               ),
             ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.system_update_alt_rounded, color: cyan),
+            title: const Text('Проверить обновления'),
+            subtitle: const Text(
+              'Новая версия скачивается вручную в виде portable ZIP-архива.',
+            ),
+            trailing: checking
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : OutlinedButton(
+                    onPressed: checkForUpdates,
+                    child: const Text('Проверить'),
+                  ),
           ),
         ),
         const SizedBox(height: 12),
