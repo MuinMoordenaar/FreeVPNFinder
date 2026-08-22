@@ -14,6 +14,15 @@ void main() {
     expect(AppSettings().mode, ConnectionMode.systemProxy);
   });
 
+  test('backup pool settings stay within their supported ranges', () {
+    final settings = AppSettings.fromJson({
+      'backupPoolSize': 99,
+      'backupProbeIntervalSeconds': 0,
+    });
+    expect(settings.backupPoolSize, 15);
+    expect(settings.backupProbeIntervalSeconds, 1);
+  });
+
   test('parses and deduplicates vless share links', () {
     const uri =
         'vless://11111111-1111-1111-1111-111111111111@example.com:443?security=reality&sni=example.com&pbk=abc&sid=01&type=tcp#Test';

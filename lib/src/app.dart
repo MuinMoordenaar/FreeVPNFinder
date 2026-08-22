@@ -13,7 +13,7 @@ const bg = Color(0xFF090C12),
     panel = Color(0xFF151517),
     blue = Color(0xFFF2F2F2),
     cyan = Color(0xFFB8B8BC);
-const appVersion = '1.2.4';
+const appVersion = '1.2.5';
 const latestReleaseApi =
     'https://api.github.com/repos/MuinMoordenaar/FreeVPNFinder/releases/latest';
 
@@ -371,7 +371,8 @@ class _HomeState extends State<_Home> {
                         children: [
                           _Stat(
                             label: 'Backup nodes',
-                            value: '${c.backups.length} / 10',
+                            value:
+                                '${c.backups.length} / ${c.settings.backupPoolSize}',
                           ),
                           const SizedBox(height: 2),
                           SizedBox(
@@ -639,6 +640,44 @@ class _Settings extends StatelessWidget {
                 suffix: 's',
                 onChanged: (v) {
                   c.settings.healthIntervalSeconds = v.round();
+                  c.saveSettings();
+                },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Column(
+            children: [
+              const ListTile(
+                leading: Icon(Icons.storage_rounded, color: cyan),
+                title: Text('Backup pool'),
+                subtitle: Text(
+                  'Prepared nodes for manual and automatic switching',
+                ),
+              ),
+              const Divider(height: 1),
+              _SliderSetting(
+                title: 'Backup nodes',
+                value: c.settings.backupPoolSize.toDouble(),
+                min: 3,
+                max: 15,
+                suffix: '',
+                onChanged: (v) {
+                  c.settings.backupPoolSize = v.round();
+                  c.saveSettings();
+                },
+              ),
+              const Divider(height: 1),
+              _SliderSetting(
+                title: 'Background node check',
+                value: c.settings.backupProbeIntervalSeconds.toDouble(),
+                min: 1,
+                max: 25,
+                suffix: 's',
+                onChanged: (v) {
+                  c.settings.backupProbeIntervalSeconds = v.round();
                   c.saveSettings();
                 },
               ),

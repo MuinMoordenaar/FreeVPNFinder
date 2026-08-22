@@ -175,6 +175,8 @@ class AppSettings {
     this.failureThreshold = 3,
     this.failoverCooldownSeconds = 300,
     this.healthIntervalSeconds = 15,
+    this.backupPoolSize = 10,
+    this.backupProbeIntervalSeconds = 5,
     this.startMinimized = false,
   });
   ConnectionMode mode;
@@ -182,7 +184,9 @@ class AppSettings {
   int qualityLatencyMs,
       failureThreshold,
       failoverCooldownSeconds,
-      healthIntervalSeconds;
+      healthIntervalSeconds,
+      backupPoolSize,
+      backupProbeIntervalSeconds;
   Map<String, dynamic> toJson() => {
     'mode': mode.name,
     'autoQualityFailover': autoQualityFailover,
@@ -190,6 +194,8 @@ class AppSettings {
     'failureThreshold': failureThreshold,
     'failoverCooldownSeconds': failoverCooldownSeconds,
     'healthIntervalSeconds': healthIntervalSeconds,
+    'backupPoolSize': backupPoolSize,
+    'backupProbeIntervalSeconds': backupProbeIntervalSeconds,
     'startMinimized': startMinimized,
   };
   factory AppSettings.fromJson(Map<String, dynamic> j) => AppSettings(
@@ -201,6 +207,10 @@ class AppSettings {
     failureThreshold: j['failureThreshold'] ?? 3,
     failoverCooldownSeconds: j['failoverCooldownSeconds'] ?? 300,
     healthIntervalSeconds: j['healthIntervalSeconds'] ?? 15,
+    backupPoolSize: ((j['backupPoolSize'] as num?) ?? 10).clamp(3, 15).toInt(),
+    backupProbeIntervalSeconds: ((j['backupProbeIntervalSeconds'] as num?) ?? 5)
+        .clamp(1, 25)
+        .toInt(),
     startMinimized: j['startMinimized'] ?? false,
   );
 }

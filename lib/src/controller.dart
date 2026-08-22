@@ -13,10 +13,6 @@ import 'sources.dart';
 import 'storage.dart';
 
 class AppController extends ChangeNotifier with TrayListener, WindowListener {
-  static const _backupPoolSize = 10;
-  // Exactly one short probe at a time: this keeps background discovery quiet
-  // while still allowing the pool to converge on lower-latency nodes.
-  static const _backupProbeDelay = Duration(seconds: 5);
   static const _backupReplacementMarginMs = 0;
   final storage = LocalStorage();
   late final SourceRepository repository;
@@ -281,7 +277,9 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
             !backups.any((b) => b.fingerprint == n.fingerprint),
       )) {
         if (_cancelRequested || !connected) break;
-        await Future<void>.delayed(_backupProbeDelay);
+        await Future<void>.delayed(
+          Duration(seconds: settings.backupProbeIntervalSeconds),
+        );
         if (_cancelRequested || !connected) break;
 
         final result = await engine.probe(node, port: 21950);
@@ -292,9 +290,12 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
 
         node.recordSuccess(result.latency);
         node.state = NodeState.standby;
-        if (backups.length < _backupPoolSize) {
+        if (backups.length < settings.backupPoolSize) {
           backups.add(node);
-          _log('Backup ${backups.length}/$_backupPoolSize ready: ${node.name}');
+          _log(
+            'Backup ${backups.length}/${settings.backupPoolSize} ready: '
+            '${node.name}',
+          );
         } else {
           final slowest = backups.reduce(
             (a, b) => latencyOrder(a, b) >= 0 ? a : b,
@@ -352,14 +353,16 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
       _qualityFailures = 0;
     if (settings.autoQualityFailover &&
         _qualityFailures >= settings.failureThreshold) {
-      _setPhase(AppPhase.degraded, 'Connection quality is poor');
-      await failover(hard: false);
+      final switched = await failover(hard: false);
+      if (!switched) {
+        _setPhase(AppPhase.degraded, 'Connection quality is poor');
+      }
     } else {
       notifyListeners();
     }
   }
 
-  Future<void> failover({required bool hard}) async {
+  Future<bool> failover({required bool hard}) async {
     if (hard && activeNode?.consecutiveFailures != 0) {
       _preferredNode = null;
     }
@@ -369,26 +372,26 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
       activeNode = null;
       await _persistPool();
       await connect();
-      return;
+      return connected;
     }
     if (!hard &&
         _lastFailover != null &&
         DateTime.now().difference(_lastFailover!).inSeconds <
             settings.failoverCooldownSeconds)
-      return;
+      return false;
     final next = lowestLatencyNode(backups);
-    await _switchToBackup(next);
+    return _switchToBackup(next);
   }
 
-  Future<void> connectToBackup(VpnNode node) async {
+  Future<bool> connectToBackup(VpnNode node) async {
     if (!connected ||
         !backups.any((backup) => backup.fingerprint == node.fingerprint)) {
-      return;
+      return false;
     }
-    await _switchToBackup(node);
+    return _switchToBackup(node);
   }
 
-  Future<void> _switchToBackup(VpnNode next) async {
+  Future<bool> _switchToBackup(VpnNode next) async {
     backups.removeWhere((backup) => backup.fingerprint == next.fingerprint);
     await _persistPool();
     _setPhase(AppPhase.switching, 'Switching server…');
@@ -397,14 +400,15 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
       _lastFailover = DateTime.now();
       _qualityFailures = 0;
       unawaited(_fillBackups(exclude: next));
+      return true;
     } catch (e) {
       next.recordFailure();
       _log('Backup failed: $e');
-      await failover(hard: true);
+      return failover(hard: true);
     }
   }
 
-  Future<void> manualSwitch() => failover(hard: true);
+  Future<bool> manualSwitch() => failover(hard: true);
   Future<void> disconnect() async {
     _cancelRequested = true;
     _healthTimer?.cancel();
@@ -463,7 +467,10 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
 
   Future<void> saveSettings() async {
     await storage.saveSettings(settings);
+    _sortAndTrimBackups();
+    await _persistPool();
     _startHealthMonitor();
+    if (connected) unawaited(_fillBackups(exclude: activeNode));
     notifyListeners();
   }
 
@@ -481,11 +488,11 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
 
   void _sortAndTrimBackups() {
     backups.sort(latencyOrder);
-    if (backups.length <= _backupPoolSize) return;
-    for (final node in backups.sublist(_backupPoolSize)) {
+    if (backups.length <= settings.backupPoolSize) return;
+    for (final node in backups.sublist(settings.backupPoolSize)) {
       node.state = NodeState.working;
     }
-    backups = backups.take(_backupPoolSize).toList();
+    backups = backups.take(settings.backupPoolSize).toList();
   }
 
   void _fail(String message) {
