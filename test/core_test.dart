@@ -14,6 +14,32 @@ void main() {
     expect(AppSettings().mode, ConnectionMode.systemProxy);
   });
 
+  test(
+    'new settings enable every protocol and check backups every 3 seconds',
+    () {
+      final settings = AppSettings();
+      expect(settings.backupProbeIntervalSeconds, 3);
+      expect(settings.enabledProtocolCount, VpnProtocol.ids.length);
+      expect(settings.isProtocolEnabled('shadowsocks'), isTrue);
+    },
+  );
+
+  test('protocol settings migrate safely and never disable everything', () {
+    final old = AppSettings.fromJson({});
+    expect(old.enabledProtocolCount, VpnProtocol.ids.length);
+    final migrated = AppSettings.fromJson({
+      'enabledProtocols': {
+        for (final protocol in VpnProtocol.ids) protocol: false,
+      },
+      'backupPoolSize': 'invalid',
+      'backupProbeIntervalSeconds': 'invalid',
+    });
+    expect(migrated.enabledProtocolCount, 1);
+    expect(migrated.isProtocolEnabled('vless'), isTrue);
+    expect(migrated.backupPoolSize, 10);
+    expect(migrated.backupProbeIntervalSeconds, 3);
+  });
+
   test('backup pool settings stay within their supported ranges', () {
     final settings = AppSettings.fromJson({
       'backupPoolSize': 99,
@@ -65,14 +91,31 @@ void main() {
     expect(a.fingerprint, b.fingerprint);
   });
 
-  test('ignores Shadowsocks links', () {
-    expect(
-      parser.parseUri(
-        'ss://YWVzLTEyOC1nY206cGFzc3dvcmQ@example.com:8388#SS',
-        'test',
-      ),
-      isNull,
+  test('parses Shadowsocks SIP002 links and builds a proxy config', () {
+    final node = parser.parseUri(
+      "ss://${base64.encode(utf8.encode('aes-256-gcm:password'))}@example.com:8388#SS",
+      'test',
     );
+    expect(node, isNotNull);
+    expect(node!.protocol, 'shadowsocks');
+    expect(node.options['method'], 'aes-256-gcm');
+    expect(node.options['credential'], 'password');
+    final config = SingBoxConfigBuilder().build(node, ConnectionMode.proxyOnly);
+    final outbound = (config['outbounds'] as List).single as Map;
+    expect(outbound['type'], 'shadowsocks');
+    expect(outbound['method'], 'aes-256-gcm');
+    expect(outbound['password'], 'password');
+  });
+
+  test('parses legacy base64 Shadowsocks links', () {
+    final payload = base64.encode(
+      utf8.encode('aes-128-gcm:password@example.com:8388'),
+    );
+    final node = parser.parseUri('ss://$payload#Legacy SS', 'test');
+    expect(node, isNotNull);
+    expect(node!.protocol, 'shadowsocks');
+    expect(node.host, 'example.com');
+    expect(node.port, 8388);
   });
 
   test('recent reconnect tries the previous active node before backups', () {
@@ -109,6 +152,7 @@ void main() {
       'trojan://secret@example.com:443?sni=example.com#Trojan',
       'hysteria2://secret@example.com:443?sni=example.com#HY2',
       'tuic://11111111-1111-1111-1111-111111111111:secret@example.com:443?sni=example.com#TUIC',
+      "ss://${base64.encode(utf8.encode('aes-256-gcm:secret'))}@example.com:8388#SS",
     ];
     for (final uri in samples) {
       final node = parser.parseUri(uri, 'test');

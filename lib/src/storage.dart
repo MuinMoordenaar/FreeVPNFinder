@@ -54,7 +54,7 @@ class LocalStorage {
     final data = await Isolate.run(() => jsonDecode(text));
     if (data is! Map<String, dynamic>) return const [];
     return [
-      for (final item in data?['nodes'] ?? const [])
+      for (final item in data['nodes'] ?? const [])
         VpnNode.fromJson(Map<String, dynamic>.from(item)),
     ];
   }

@@ -215,10 +215,13 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     return null;
   }
 
-  bool _supported(VpnNode n) => n.protocol != 'shadowsocks';
+  bool _supported(VpnNode n) => VpnProtocol.isKnown(n.protocol);
+
+  bool _enabled(VpnNode n) =>
+      _supported(n) && settings.isProtocolEnabled(n.protocol);
 
   bool _eligible(VpnNode n) =>
-      _supported(n) &&
+      _enabled(n) &&
       (n.state != NodeState.cooldown ||
           n.lastFailureAt == null ||
           DateTime.now().difference(n.lastFailureAt!).inHours >= 1);
@@ -384,14 +387,15 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
       }
       final group = '${node.sourceId}:${node.protocol}';
       final nodePriority = _backgroundPriority(node);
-      final fallbackPriority = fallback == null
+      final fallbackNode = fallback;
+      final fallbackPriority = fallbackNode == null
           ? 1 << 30
-          : _backgroundPriority(fallback!);
+          : _backgroundPriority(fallbackNode);
       final preferred =
-          fallback == null ||
+          fallbackNode == null ||
           nodePriority < fallbackPriority ||
           (nodePriority == fallbackPriority &&
-              (node.latency ?? 1 << 30) < (fallback!.latency ?? 1 << 30));
+              (node.latency ?? 1 << 30) < (fallbackNode.latency ?? 1 << 30));
       if (preferred) {
         fallback = node;
         fallbackGroup = group;
@@ -584,6 +588,33 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     notifyListeners();
   }
 
+  Future<bool> setProtocolEnabled(String protocol, bool enabled) async {
+    if (!VpnProtocol.isKnown(protocol)) return false;
+    if (settings.isProtocolEnabled(protocol) == enabled) return true;
+    if (!enabled && settings.enabledProtocolCount <= 1) return false;
+
+    final disabledActive =
+        !enabled && activeNode?.protocol == protocol && connected;
+    settings.enabledProtocols[protocol] = enabled;
+    backups.removeWhere((node) {
+      final remove = !_enabled(node);
+      if (remove) node.state = NodeState.working;
+      return remove;
+    });
+    _resetBackgroundScan();
+    await storage.saveSettings(settings);
+    await _persistPool();
+
+    if (disabledActive) {
+      await disconnect();
+      await connect();
+    } else {
+      _startBackgroundDiscovery();
+      notifyListeners();
+    }
+    return true;
+  }
+
   Future<void> saveSettings() async {
     await storage.saveSettings(settings);
     _sortAndTrimBackups();
@@ -607,6 +638,11 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   );
 
   void _sortAndTrimBackups() {
+    backups.removeWhere((node) {
+      final remove = !_enabled(node);
+      if (remove) node.state = NodeState.working;
+      return remove;
+    });
     backups.sort(latencyOrder);
     if (backups.length <= settings.backupPoolSize) return;
     for (final node in backups.sublist(settings.backupPoolSize)) {

@@ -5,11 +5,11 @@ Windows 10/11 MVP built with Flutter and sing-box. The app downloads public shar
 ## Features
 
 - VPN (TUN), System Proxy, and Proxy Only modes
-- VLESS/Reality, VMess, Trojan, Hysteria2, and TUIC share links
-- Shadowsocks links are ignored because they do not pass the app's connectivity requirements reliably
+- VLESS/Reality, VMess, Trojan, Shadowsocks, Hysteria2, and TUIC share links
+- Per-protocol enable/disable controls in Settings; at least one protocol always remains available
 - Three built-in sources plus custom URI and subscription import
 - offline source cache and JSON state in `%AppData%`
-- sequential first-working-node discovery and ten-node backup pool with low-impact background refresh
+- sequential first-working-node discovery and ten-node backup pool with low-impact background refresh (3 seconds by default)
 - hard failover and latency failover to the lowest-ping backup with replacement margin/cooldown
 - Portable Windows ZIP package with all runtime files and a desktop shortcut
 - Manual update check opens the latest portable ZIP download; no installer or auto-update

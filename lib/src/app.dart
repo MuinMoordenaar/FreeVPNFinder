@@ -13,7 +13,7 @@ const bg = Color(0xFF090C12),
     panel = Color(0xFF151517),
     blue = Color(0xFFF2F2F2),
     cyan = Color(0xFFB8B8BC);
-const appVersion = '1.2.10';
+const appVersion = '1.3.0';
 const latestReleaseApi =
     'https://api.github.com/repos/MuinMoordenaar/FreeVPNFinder/releases/latest';
 
@@ -681,6 +681,54 @@ class _Settings extends StatelessWidget {
                   c.saveSettings();
                 },
               ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Column(
+            children: [
+              const ListTile(
+                leading: Icon(Icons.alt_route_rounded, color: cyan),
+                title: Text('Protocols'),
+                subtitle: Text(
+                  'Choose which protocols can be searched and used',
+                ),
+              ),
+              const Divider(height: 1),
+              for (var i = 0; i < VpnProtocol.ids.length; i++) ...[
+                if (i > 0) const Divider(height: 1),
+                Builder(
+                  builder: (context) {
+                    final protocol = VpnProtocol.ids[i];
+                    final enabled = c.settings.isProtocolEnabled(protocol);
+                    return SwitchListTile(
+                      title: Text(VpnProtocol.label(protocol)),
+                      subtitle: Text(
+                        enabled ? 'Included in server search' : 'Disabled',
+                      ),
+                      value: enabled,
+                      onChanged: enabled && c.settings.enabledProtocolCount <= 1
+                          ? null
+                          : (value) async {
+                              final changed = await c.setProtocolEnabled(
+                                protocol,
+                                value,
+                              );
+                              if (!changed && context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'At least one protocol must remain enabled',
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                    );
+                  },
+                ),
+              ],
             ],
           ),
         ),

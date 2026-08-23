@@ -23,6 +23,29 @@ enum AppPhase {
 
 enum NodeState { unknown, checking, working, failed, cooldown, active, standby }
 
+class VpnProtocol {
+  static const ids = <String>[
+    'vless',
+    'vmess',
+    'trojan',
+    'shadowsocks',
+    'hysteria2',
+    'tuic',
+  ];
+
+  static const labels = <String, String>{
+    'vless': 'VLESS',
+    'vmess': 'VMess',
+    'trojan': 'Trojan',
+    'shadowsocks': 'Shadowsocks',
+    'hysteria2': 'Hysteria2',
+    'tuic': 'TUIC',
+  };
+
+  static bool isKnown(String protocol) => ids.contains(protocol);
+  static String label(String protocol) => labels[protocol] ?? protocol;
+}
+
 class VpnNode {
   VpnNode({
     required this.id,
@@ -176,9 +199,13 @@ class AppSettings {
     this.failoverCooldownSeconds = 300,
     this.healthIntervalSeconds = 15,
     this.backupPoolSize = 10,
-    this.backupProbeIntervalSeconds = 5,
+    this.backupProbeIntervalSeconds = 3,
+    Map<String, bool>? enabledProtocols,
     this.startMinimized = false,
-  });
+  }) : enabledProtocols = {
+         for (final protocol in VpnProtocol.ids)
+           protocol: enabledProtocols?[protocol] ?? true,
+       };
   ConnectionMode mode;
   bool autoQualityFailover, startMinimized;
   int qualityLatencyMs,
@@ -187,6 +214,11 @@ class AppSettings {
       healthIntervalSeconds,
       backupPoolSize,
       backupProbeIntervalSeconds;
+  final Map<String, bool> enabledProtocols;
+  bool isProtocolEnabled(String protocol) =>
+      enabledProtocols[protocol] ?? VpnProtocol.isKnown(protocol);
+  int get enabledProtocolCount =>
+      VpnProtocol.ids.where(isProtocolEnabled).length;
   Map<String, dynamic> toJson() => {
     'mode': mode.name,
     'autoQualityFailover': autoQualityFailover,
@@ -196,21 +228,54 @@ class AppSettings {
     'healthIntervalSeconds': healthIntervalSeconds,
     'backupPoolSize': backupPoolSize,
     'backupProbeIntervalSeconds': backupProbeIntervalSeconds,
+    'enabledProtocols': {
+      for (final protocol in VpnProtocol.ids)
+        protocol: isProtocolEnabled(protocol),
+    },
     'startMinimized': startMinimized,
   };
-  factory AppSettings.fromJson(Map<String, dynamic> j) => AppSettings(
-    mode:
-        ConnectionMode.values.where((e) => e.name == j['mode']).firstOrNull ??
-        ConnectionMode.systemProxy,
-    autoQualityFailover: j['autoQualityFailover'] ?? true,
-    qualityLatencyMs: j['qualityLatencyMs'] ?? 800,
-    failureThreshold: j['failureThreshold'] ?? 3,
-    failoverCooldownSeconds: j['failoverCooldownSeconds'] ?? 300,
-    healthIntervalSeconds: j['healthIntervalSeconds'] ?? 15,
-    backupPoolSize: ((j['backupPoolSize'] as num?) ?? 10).clamp(3, 15).toInt(),
-    backupProbeIntervalSeconds: ((j['backupProbeIntervalSeconds'] as num?) ?? 5)
-        .clamp(1, 25)
-        .toInt(),
-    startMinimized: j['startMinimized'] ?? false,
-  );
+  factory AppSettings.fromJson(Map<String, dynamic> j) {
+    final rawProtocols = j['enabledProtocols'];
+    final savedProtocols = rawProtocols is Map
+        ? <String, bool>{
+            for (final protocol in VpnProtocol.ids)
+              if (rawProtocols[protocol] is bool)
+                protocol: rawProtocols[protocol] as bool,
+          }
+        : null;
+    final settings = AppSettings(
+      mode:
+          ConnectionMode.values.where((e) => e.name == j['mode']).firstOrNull ??
+          ConnectionMode.systemProxy,
+      autoQualityFailover: j['autoQualityFailover'] is bool
+          ? j['autoQualityFailover'] as bool
+          : true,
+      qualityLatencyMs: j['qualityLatencyMs'] is num
+          ? (j['qualityLatencyMs'] as num).clamp(300, 2000).toInt()
+          : 800,
+      failureThreshold: j['failureThreshold'] is num
+          ? (j['failureThreshold'] as num).clamp(2, 6).toInt()
+          : 3,
+      failoverCooldownSeconds: j['failoverCooldownSeconds'] is num
+          ? (j['failoverCooldownSeconds'] as num).clamp(30, 1800).toInt()
+          : 300,
+      healthIntervalSeconds: j['healthIntervalSeconds'] is num
+          ? (j['healthIntervalSeconds'] as num).clamp(10, 60).toInt()
+          : 15,
+      backupPoolSize: j['backupPoolSize'] is num
+          ? (j['backupPoolSize'] as num).clamp(3, 15).toInt()
+          : 10,
+      backupProbeIntervalSeconds: j['backupProbeIntervalSeconds'] is num
+          ? (j['backupProbeIntervalSeconds'] as num).clamp(1, 25).toInt()
+          : 3,
+      enabledProtocols: savedProtocols,
+      startMinimized: j['startMinimized'] is bool
+          ? j['startMinimized'] as bool
+          : false,
+    );
+    if (settings.enabledProtocolCount == 0) {
+      settings.enabledProtocols['vless'] = true;
+    }
+    return settings;
+  }
 }
