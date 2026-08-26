@@ -26,21 +26,31 @@ enum NodeState { unknown, checking, working, failed, cooldown, active, standby }
 enum SplitTunnelMode { bypass, vpnOnly }
 
 class SplitTunnelApp {
-  SplitTunnelApp({required this.name, required this.path, this.enabled = true});
+  SplitTunnelApp({
+    required this.name,
+    required this.path,
+    this.enabled = true,
+    this.isDirectory = false,
+  });
   final String name;
   final String path;
   bool enabled;
+  final bool isDirectory;
 
   Map<String, dynamic> toJson() => {
     'name': name,
     'path': path,
     'enabled': enabled,
+    'isDirectory': isDirectory,
   };
 
   factory SplitTunnelApp.fromJson(Map<String, dynamic> json) => SplitTunnelApp(
     name: json['name'] is String ? json['name'] as String : 'Application',
     path: json['path'] is String ? json['path'] as String : '',
     enabled: json['enabled'] is bool ? json['enabled'] as bool : true,
+    isDirectory: json['isDirectory'] is bool
+        ? json['isDirectory'] as bool
+        : false,
   );
 }
 

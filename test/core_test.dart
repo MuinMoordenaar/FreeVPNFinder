@@ -57,6 +57,7 @@ void main() {
         'mode': 'vpnOnly',
         'applications': [
           {'name': 'Browser', 'path': r'C:\Apps\browser.exe'},
+          {'name': 'Games', 'path': r'C:\Games', 'isDirectory': true},
         ],
         'domains': ['example.com'],
       },
@@ -64,14 +65,16 @@ void main() {
     expect(settings.splitTunneling.enabled, isTrue);
     expect(settings.splitTunneling.mode, SplitTunnelMode.vpnOnly);
     expect(
-      settings.splitTunneling.applications.single.path,
+      settings.splitTunneling.applications.first.path,
       r'C:\Apps\browser.exe',
     );
+    expect(settings.splitTunneling.applications[1].isDirectory, isTrue);
     expect(settings.splitTunneling.domains, ['example.com']);
 
     final restored = AppSettings.fromJson(settings.toJson());
     expect(restored.splitTunneling.mode, SplitTunnelMode.vpnOnly);
-    expect(restored.splitTunneling.applications.single.name, 'Browser');
+    expect(restored.splitTunneling.applications.first.name, 'Browser');
+    expect(restored.splitTunneling.applications[1].isDirectory, isTrue);
   });
 
   test('VPN split tunneling creates working direct and VPN routes', () {
@@ -84,6 +87,7 @@ void main() {
       mode: SplitTunnelMode.vpnOnly,
       applications: [
         SplitTunnelApp(name: 'Browser', path: r'C:\Apps\browser.exe'),
+        SplitTunnelApp(name: 'Games', path: r'C:\Games', isDirectory: true),
       ],
       domains: ['https://example.com/'],
     );
@@ -128,6 +132,26 @@ void main() {
         ),
         isTrue,
       );
+      expect(
+        rules.any(
+          (rule) =>
+              rule['process_path_regex'] is List &&
+              rule['outbound'] == 'selected',
+        ),
+        isTrue,
+      );
+      final folderRule = rules.firstWhere(
+        (rule) => rule['process_path_regex'] is List,
+      );
+      final folderRegex = RegExp(
+        ((folderRule['process_path_regex'] as List).single as String)
+            .replaceFirst('(?i)', ''),
+        caseSensitive: false,
+      );
+      expect(folderRegex.hasMatch(r'C:\Games\game.exe'), isTrue);
+      expect(folderRegex.hasMatch(r'C:\Games\Nested\game.exe'), isTrue);
+      expect(folderRegex.hasMatch(r'C:\Games2\game.exe'), isFalse);
+      expect(folderRegex.hasMatch(r'C:\Games\readme.txt'), isFalse);
       expect(route['final'], 'direct');
     }
   });
@@ -294,6 +318,11 @@ void main() {
                 SplitTunnelApp(
                   name: 'Notepad',
                   path: r'C:\Windows\System32\notepad.exe',
+                ),
+                SplitTunnelApp(
+                  name: 'Apps',
+                  path: r'C:\Apps',
+                  isDirectory: true,
                 ),
               ],
               domains: ['example.com'],

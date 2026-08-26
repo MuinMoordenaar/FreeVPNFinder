@@ -663,6 +663,31 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     await saveSplitTunneling();
   }
 
+  Future<void> addSplitFolder(String path) async {
+    final entered = path.trim();
+    if (entered.isEmpty) {
+      throw const FormatException('Folder path is empty');
+    }
+    final directory = Directory(entered);
+    if (!await directory.exists()) {
+      throw const FormatException('Select an existing application folder');
+    }
+    final normalized = directory.absolute.path;
+    if (settings.splitTunneling.applications.any(
+      (app) => app.path.toLowerCase() == normalized.toLowerCase(),
+    )) {
+      return;
+    }
+    settings.splitTunneling.applications.add(
+      SplitTunnelApp(
+        name: normalized.split(RegExp(r'[\\/]')).last,
+        path: normalized,
+        isDirectory: true,
+      ),
+    );
+    await saveSplitTunneling();
+  }
+
   Future<void> removeSplitApp(int index) async {
     settings.splitTunneling.applications.removeAt(index);
     await saveSplitTunneling();

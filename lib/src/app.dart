@@ -13,7 +13,7 @@ const bg = Color(0xFF090C12),
     panel = Color(0xFF151517),
     blue = Color(0xFFF2F2F2),
     cyan = Color(0xFFB8B8BC);
-const appVersion = '1.3.2';
+const appVersion = '1.3.3';
 const latestReleaseApi =
     'https://api.github.com/repos/MuinMoordenaar/FreeVPNFinder/releases/latest';
 
@@ -784,11 +784,36 @@ class _SplitTunnelingState extends State<_SplitTunneling> {
     }
   }
 
+  Future<void> _browseFolder() async {
+    if (!Platform.isWindows) return;
+    const script =
+        r"Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description='Select an application folder'; if($d.ShowDialog() -eq 'OK'){[Console]::Write($d.SelectedPath)}";
+    final result = await Process.run('powershell.exe', [
+      '-NoProfile',
+      '-STA',
+      '-Command',
+      script,
+    ]);
+    if (result.exitCode == 0 && '${result.stdout}'.trim().isNotEmpty) {
+      appPath.text = '${result.stdout}'.trim();
+    }
+  }
+
   Future<void> _addApp() async {
     try {
       await widget.c.addSplitApp(appPath.text);
       appPath.clear();
       setState(() => message = 'Application added');
+    } catch (e) {
+      setState(() => message = '$e');
+    }
+  }
+
+  Future<void> _addFolder() async {
+    try {
+      await widget.c.addSplitFolder(appPath.text);
+      appPath.clear();
+      setState(() => message = 'Application folder added');
     } catch (e) {
       setState(() => message = '$e');
     }
@@ -809,7 +834,7 @@ class _SplitTunnelingState extends State<_SplitTunneling> {
     final split = widget.c.settings.splitTunneling;
     return _Page(
       title: 'Split Tunneling',
-      subtitle: 'Choose which applications and websites use the VPN',
+      subtitle: 'Choose applications, folders and websites for the VPN',
       child: ListView(
         children: [
           Card(
@@ -818,7 +843,7 @@ class _SplitTunnelingState extends State<_SplitTunneling> {
                 SwitchListTile(
                   title: const Text('Enable split tunneling'),
                   subtitle: const Text(
-                    'Application and website rules work in every connection mode',
+                    'Application, folder and website rules work in every connection mode',
                   ),
                   value: split.enabled,
                   onChanged: (value) {
@@ -856,17 +881,26 @@ class _SplitTunnelingState extends State<_SplitTunneling> {
           ),
           const SizedBox(height: 12),
           _SplitListCard(
-            title: 'Applications',
+            title: 'Applications and folders',
             icon: Icons.apps_rounded,
-            empty: 'No applications added',
+            empty: 'No applications or folders added',
             hasItems: split.applications.isNotEmpty,
             children: [
               for (var i = 0; i < split.applications.length; i++)
                 ListTile(
                   dense: true,
-                  leading: const Icon(Icons.window_rounded, color: cyan),
+                  leading: Icon(
+                    split.applications[i].isDirectory
+                        ? Icons.folder_rounded
+                        : Icons.window_rounded,
+                    color: cyan,
+                  ),
                   title: Text(split.applications[i].name),
-                  subtitle: Text(split.applications[i].path),
+                  subtitle: Text(
+                    split.applications[i].isDirectory
+                        ? '${split.applications[i].path} (including subfolders)'
+                        : split.applications[i].path,
+                  ),
                   trailing: IconButton(
                     icon: const Icon(Icons.close),
                     onPressed: () => widget.c.removeSplitApp(i),
@@ -880,18 +914,33 @@ class _SplitTunnelingState extends State<_SplitTunneling> {
                       child: TextField(
                         controller: appPath,
                         decoration: const InputDecoration(
-                          hintText: r'C:\Path\Application.exe',
+                          hintText: r'C:\Path\Application.exe or folder',
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    IconButton(
-                      onPressed: _browseApp,
-                      icon: const Icon(Icons.folder_open),
+                    Tooltip(
+                      message: 'Choose application',
+                      child: IconButton(
+                        onPressed: _browseApp,
+                        icon: const Icon(Icons.app_registration_rounded),
+                      ),
+                    ),
+                    Tooltip(
+                      message: 'Choose folder',
+                      child: IconButton(
+                        onPressed: _browseFolder,
+                        icon: const Icon(Icons.folder_open),
+                      ),
                     ),
                     FilledButton(
                       onPressed: _addApp,
                       child: const Text('Add App'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: _addFolder,
+                      child: const Text('Add Folder'),
                     ),
                   ],
                 ),

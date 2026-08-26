@@ -62,7 +62,9 @@ class SingBoxConfigBuilder {
         final path = app.path.trim();
         if (path.isNotEmpty) {
           routeRules.add({
-            'process_path': [path],
+            app.isDirectory ? 'process_path_regex' : 'process_path': [
+              app.isDirectory ? _folderProcessPathRegex(path) : path,
+            ],
             'outbound': target,
           });
         }
@@ -106,6 +108,15 @@ class SingBoxConfigBuilder {
     return domain.endsWith('.')
         ? domain.substring(0, domain.length - 1)
         : domain;
+  }
+
+  String _folderProcessPathRegex(String value) {
+    var path = value.trim().replaceAll('/', '\\');
+    while (path.length > 3 && path.endsWith('\\')) {
+      path = path.substring(0, path.length - 1);
+    }
+    final escaped = RegExp.escape(path);
+    return '(?i)^$escaped\\\\(?:[^\\\\]+\\\\)*[^\\\\]+\\.exe\$';
   }
 
   Map<String, dynamic> _outbound(VpnNode n) {
