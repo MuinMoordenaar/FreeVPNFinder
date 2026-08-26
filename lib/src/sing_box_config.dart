@@ -6,7 +6,11 @@ class SingBoxConfigBuilder {
     ConnectionMode mode, {
     int proxyPort = 2080,
     bool testOnly = false,
+    SplitTunnelSettings? splitTunneling,
   }) {
+    final split = splitTunneling;
+    final splitEnabled = !testOnly && split?.enabled == true;
+    final tunEnabled = !testOnly && mode == ConnectionMode.vpn;
     final inbounds = <Map<String, dynamic>>[
       {
         'type': 'mixed',
@@ -14,7 +18,7 @@ class SingBoxConfigBuilder {
         'listen': '127.0.0.1',
         'listen_port': proxyPort,
       },
-      if (mode == ConnectionMode.vpn && !testOnly)
+      if (tunEnabled)
         {
           'type': 'tun',
           'tag': 'tun-in',
@@ -25,12 +29,83 @@ class SingBoxConfigBuilder {
           'stack': 'mixed',
         },
     ];
+    final outbounds = <Map<String, dynamic>>[
+      _outbound(node),
+      if (splitEnabled) {'type': 'direct', 'tag': 'direct'},
+    ];
+    final routeRules = <Map<String, dynamic>>[];
+    if (splitEnabled && split != null) {
+      // Keep these as non-final actions so the following rules can use the
+      // sniffed domain and the Windows process path.
+      routeRules.add({'action': 'sniff'});
+      if (tunEnabled) {
+        routeRules.add({
+          'protocol': ['dns'],
+          'action': 'hijack-dns',
+        });
+      }
+      final target = split.mode == SplitTunnelMode.bypass
+          ? 'direct'
+          : 'selected';
+      for (final domain in split.domains) {
+        final normalized = _normalizeDomain(domain);
+        if (normalized.isNotEmpty) {
+          routeRules.add({
+            'domain_suffix': [normalized],
+            // The packaged sing-box 1.13.15 build uses this compatibility
+            // field for route targets.
+            'outbound': target,
+          });
+        }
+      }
+      for (final app in split.applications.where((app) => app.enabled)) {
+        final path = app.path.trim();
+        if (path.isNotEmpty) {
+          routeRules.add({
+            'process_path': [path],
+            'outbound': target,
+          });
+        }
+      }
+    }
     return {
       'log': {'level': 'info', 'timestamp': true},
       'inbounds': inbounds,
-      'outbounds': [_outbound(node)],
-      'route': {'final': 'selected'},
+      'outbounds': outbounds,
+      if (tunEnabled && splitEnabled)
+        'dns': {
+          'servers': [
+            {
+              'type': 'https',
+              'tag': 'remote-dns',
+              'server': '1.1.1.1',
+              'path': '/dns-query',
+              'detour': 'selected',
+            },
+          ],
+          'final': 'remote-dns',
+        },
+      'route': {
+        if (splitEnabled && routeRules.isNotEmpty) 'rules': routeRules,
+        // Prevent the VPN server and direct exceptions from being routed
+        // back into the TUN interface on Windows.
+        if (tunEnabled) 'auto_detect_interface': true,
+        'final': splitEnabled && split!.mode == SplitTunnelMode.vpnOnly
+            ? 'direct'
+            : 'selected',
+      },
     };
+  }
+
+  String _normalizeDomain(String value) {
+    var domain = value.trim().toLowerCase();
+    if (domain.startsWith('*.')) domain = domain.substring(2);
+    if (domain.startsWith('https://')) domain = domain.substring(8);
+    if (domain.startsWith('http://')) domain = domain.substring(7);
+    domain = domain.split('/').first.split(':').first;
+    return domain.endsWith('.')
+        ? domain.substring(0, domain.length - 1)
+        : domain;
   }
 
   Map<String, dynamic> _outbound(VpnNode n) {

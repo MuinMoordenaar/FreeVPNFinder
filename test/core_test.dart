@@ -6,6 +6,7 @@ import 'package:free_vpn_finder/src/models.dart';
 import 'package:free_vpn_finder/src/node_parser.dart';
 import 'package:free_vpn_finder/src/reconnect_policy.dart';
 import 'package:free_vpn_finder/src/sing_box_config.dart';
+import 'package:free_vpn_finder/src/sing_box_engine.dart';
 
 void main() {
   final parser = NodeParser();
@@ -47,6 +48,103 @@ void main() {
     });
     expect(settings.backupPoolSize, 15);
     expect(settings.backupProbeIntervalSeconds, 1);
+  });
+
+  test('split tunneling settings migrate and round-trip safely', () {
+    final settings = AppSettings.fromJson({
+      'splitTunneling': {
+        'enabled': true,
+        'mode': 'vpnOnly',
+        'applications': [
+          {'name': 'Browser', 'path': r'C:\Apps\browser.exe'},
+        ],
+        'domains': ['example.com'],
+      },
+    });
+    expect(settings.splitTunneling.enabled, isTrue);
+    expect(settings.splitTunneling.mode, SplitTunnelMode.vpnOnly);
+    expect(
+      settings.splitTunneling.applications.single.path,
+      r'C:\Apps\browser.exe',
+    );
+    expect(settings.splitTunneling.domains, ['example.com']);
+
+    final restored = AppSettings.fromJson(settings.toJson());
+    expect(restored.splitTunneling.mode, SplitTunnelMode.vpnOnly);
+    expect(restored.splitTunneling.applications.single.name, 'Browser');
+  });
+
+  test('VPN split tunneling creates working direct and VPN routes', () {
+    final node = parser.parseUri(
+      'vless://11111111-1111-1111-1111-111111111111@example.com:443#Test',
+      'test',
+    )!;
+    final split = SplitTunnelSettings(
+      enabled: true,
+      mode: SplitTunnelMode.vpnOnly,
+      applications: [
+        SplitTunnelApp(name: 'Browser', path: r'C:\Apps\browser.exe'),
+      ],
+      domains: ['https://example.com/'],
+    );
+    for (final mode in ConnectionMode.values) {
+      final config = SingBoxConfigBuilder().build(
+        node,
+        mode,
+        splitTunneling: split,
+      );
+      final route = config['route'] as Map<String, dynamic>;
+      final rules = (route['rules'] as List).cast<Map<String, dynamic>>();
+      final outbounds = (config['outbounds'] as List)
+          .cast<Map<String, dynamic>>();
+
+      expect(
+        (config['inbounds'] as List).any((inbound) {
+          return (inbound as Map)['type'] == 'tun';
+        }),
+        mode == ConnectionMode.vpn,
+      );
+      expect(outbounds.map((outbound) => outbound['tag']), contains('direct'));
+      expect(
+        route['auto_detect_interface'],
+        mode == ConnectionMode.vpn ? isTrue : isNull,
+      );
+      expect(rules.any((rule) => rule['action'] == 'sniff'), isTrue);
+      expect(
+        rules.any((rule) => rule['action'] == 'hijack-dns'),
+        mode == ConnectionMode.vpn,
+      );
+      expect(
+        rules.any(
+          (rule) =>
+              rule['domain_suffix'] is List && rule['outbound'] == 'selected',
+        ),
+        isTrue,
+      );
+      expect(
+        rules.any(
+          (rule) =>
+              rule['process_path'] is List && rule['outbound'] == 'selected',
+        ),
+        isTrue,
+      );
+      expect(route['final'], 'direct');
+    }
+  });
+
+  test('system proxy split bypass exports exact and subdomain exceptions', () {
+    final split = SplitTunnelSettings(
+      enabled: true,
+      mode: SplitTunnelMode.bypass,
+      domains: ['https://2IP.io/'],
+    );
+    expect(buildSystemProxyOverride(split), '<local>;2ip.io;*.2ip.io');
+    expect(
+      buildSystemProxyOverride(
+        SplitTunnelSettings(enabled: true, mode: SplitTunnelMode.vpnOnly),
+      ),
+      '<local>',
+    );
   });
 
   test('parses and deduplicates vless share links', () {
@@ -168,6 +266,48 @@ void main() {
       final result = await Process.run(binary, ['check', '-c', file.path]);
       await file.delete();
       expect(result.exitCode, 0, reason: '$uri\n${result.stderr}');
+    }
+  });
+
+  test('sing-box accepts the generated Windows split tunnel config', () async {
+    final binary = File('core${Platform.pathSeparator}sing-box.exe')
+        .absolute
+        .path;
+    final node = parser.parseUri(
+      'vless://11111111-1111-1111-1111-111111111111@example.com:443#Split',
+      'test',
+    )!;
+    for (final mode in ConnectionMode.values) {
+      final file = File(
+        '${Directory.systemTemp.path}${Platform.pathSeparator}'
+        'fvf-split-${mode.name}-${DateTime.now().microsecondsSinceEpoch}.json',
+      );
+      await file.writeAsString(
+        jsonEncode(
+          SingBoxConfigBuilder().build(
+            node,
+            mode,
+            splitTunneling: SplitTunnelSettings(
+              enabled: true,
+              mode: SplitTunnelMode.bypass,
+              applications: [
+                SplitTunnelApp(
+                  name: 'Notepad',
+                  path: r'C:\Windows\System32\notepad.exe',
+                ),
+              ],
+              domains: ['example.com'],
+            ),
+          ),
+        ),
+      );
+      final result = await Process.run(binary, ['check', '-c', file.path]);
+      await file.delete();
+      expect(
+        result.exitCode,
+        0,
+        reason: '${mode.name}\n${result.stdout}\n${result.stderr}',
+      );
     }
   });
 }

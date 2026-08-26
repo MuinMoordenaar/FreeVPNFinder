@@ -246,7 +246,11 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
   Future<void> _activate(VpnNode node) async {
     final previous = activeNode;
     _setPhase(AppPhase.connecting, 'Connecting to ${node.name}…');
-    await engine.start(node, settings.mode);
+    await engine.start(
+      node,
+      settings.mode,
+      splitTunneling: settings.splitTunneling,
+    );
     _setPhase(AppPhase.verifying, 'Verifying connection…');
     final result = await engine.checkActive();
     if (!result.ok) {
@@ -623,6 +627,66 @@ class AppController extends ChangeNotifier with TrayListener, WindowListener {
     _startHealthMonitor();
     _startBackgroundDiscovery();
     notifyListeners();
+  }
+
+  Future<void> saveSplitTunneling() async {
+    await storage.saveSettings(settings);
+    if (connected && activeNode != null) {
+      final node = activeNode!;
+      await engine.stop();
+      await _activate(node);
+    }
+    notifyListeners();
+  }
+
+  Future<void> addSplitApp(String path) async {
+    final entered = path.trim();
+    if (entered.isEmpty) {
+      throw const FormatException('Application path is empty');
+    }
+    final file = File(entered);
+    if (!await file.exists() || !entered.toLowerCase().endsWith('.exe')) {
+      throw const FormatException('Select an existing .exe application');
+    }
+    final normalized = file.absolute.path;
+    if (settings.splitTunneling.applications.any(
+      (app) => app.path.toLowerCase() == normalized.toLowerCase(),
+    )) {
+      return;
+    }
+    settings.splitTunneling.applications.add(
+      SplitTunnelApp(
+        name: normalized.split(RegExp(r'[\\/]')).last,
+        path: normalized,
+      ),
+    );
+    await saveSplitTunneling();
+  }
+
+  Future<void> removeSplitApp(int index) async {
+    settings.splitTunneling.applications.removeAt(index);
+    await saveSplitTunneling();
+  }
+
+  Future<void> addSplitDomain(String value) async {
+    var domain = value.trim().toLowerCase();
+    if (domain.startsWith('*.')) domain = domain.substring(2);
+    if (domain.startsWith('https://')) domain = domain.substring(8);
+    if (domain.startsWith('http://')) domain = domain.substring(7);
+    domain = domain.split('/').first.split(':').first;
+    if (domain.endsWith('.')) domain = domain.substring(0, domain.length - 1);
+    if (domain.isEmpty || !domain.contains('.')) {
+      throw const FormatException('Enter a domain such as youtube.com');
+    }
+    if (!settings.splitTunneling.domains.contains(domain)) {
+      settings.splitTunneling.domains.add(domain);
+      await saveSplitTunneling();
+    }
+  }
+
+  Future<void> removeSplitDomain(int index) async {
+    settings.splitTunneling.domains.removeAt(index);
+    await saveSplitTunneling();
   }
 
   Future<void> _persistPool() => storage.saveConnectionPool(

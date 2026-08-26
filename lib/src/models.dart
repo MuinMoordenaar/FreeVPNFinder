@@ -23,6 +23,73 @@ enum AppPhase {
 
 enum NodeState { unknown, checking, working, failed, cooldown, active, standby }
 
+enum SplitTunnelMode { bypass, vpnOnly }
+
+class SplitTunnelApp {
+  SplitTunnelApp({required this.name, required this.path, this.enabled = true});
+  final String name;
+  final String path;
+  bool enabled;
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'path': path,
+    'enabled': enabled,
+  };
+
+  factory SplitTunnelApp.fromJson(Map<String, dynamic> json) => SplitTunnelApp(
+    name: json['name'] is String ? json['name'] as String : 'Application',
+    path: json['path'] is String ? json['path'] as String : '',
+    enabled: json['enabled'] is bool ? json['enabled'] as bool : true,
+  );
+}
+
+class SplitTunnelSettings {
+  SplitTunnelSettings({
+    this.enabled = false,
+    this.mode = SplitTunnelMode.bypass,
+    List<SplitTunnelApp>? applications,
+    List<String>? domains,
+  }) : applications = applications ?? [],
+       domains = domains ?? [];
+
+  bool enabled;
+  SplitTunnelMode mode;
+  final List<SplitTunnelApp> applications;
+  final List<String> domains;
+
+  Map<String, dynamic> toJson() => {
+    'enabled': enabled,
+    'mode': mode.name,
+    'applications': applications.map((e) => e.toJson()).toList(),
+    'domains': domains,
+  };
+
+  factory SplitTunnelSettings.fromJson(Map<String, dynamic> json) {
+    final rawApplications = json['applications'];
+    final rawDomains = json['domains'];
+    return SplitTunnelSettings(
+      enabled: json['enabled'] is bool ? json['enabled'] as bool : false,
+      mode:
+          SplitTunnelMode.values.where((value) {
+            return value.name == json['mode'];
+          }).firstOrNull ??
+          SplitTunnelMode.bypass,
+      applications: [
+        if (rawApplications is List)
+          for (final item in rawApplications)
+            if (item is Map)
+              SplitTunnelApp.fromJson(Map<String, dynamic>.from(item)),
+      ],
+      domains: [
+        if (rawDomains is List)
+          for (final item in rawDomains)
+            if (item is String && item.trim().isNotEmpty) item.trim(),
+      ],
+    );
+  }
+}
+
 class VpnProtocol {
   static const ids = <String>[
     'vless',
@@ -202,10 +269,12 @@ class AppSettings {
     this.backupProbeIntervalSeconds = 3,
     Map<String, bool>? enabledProtocols,
     this.startMinimized = false,
+    SplitTunnelSettings? splitTunneling,
   }) : enabledProtocols = {
          for (final protocol in VpnProtocol.ids)
            protocol: enabledProtocols?[protocol] ?? true,
-       };
+       },
+       splitTunneling = splitTunneling ?? SplitTunnelSettings();
   ConnectionMode mode;
   bool autoQualityFailover, startMinimized;
   int qualityLatencyMs,
@@ -215,6 +284,7 @@ class AppSettings {
       backupPoolSize,
       backupProbeIntervalSeconds;
   final Map<String, bool> enabledProtocols;
+  SplitTunnelSettings splitTunneling;
   bool isProtocolEnabled(String protocol) =>
       enabledProtocols[protocol] ?? VpnProtocol.isKnown(protocol);
   int get enabledProtocolCount =>
@@ -233,6 +303,7 @@ class AppSettings {
         protocol: isProtocolEnabled(protocol),
     },
     'startMinimized': startMinimized,
+    'splitTunneling': splitTunneling.toJson(),
   };
   factory AppSettings.fromJson(Map<String, dynamic> j) {
     final rawProtocols = j['enabledProtocols'];
@@ -243,6 +314,7 @@ class AppSettings {
                 protocol: rawProtocols[protocol] as bool,
           }
         : null;
+    final rawSplitTunneling = j['splitTunneling'];
     final settings = AppSettings(
       mode:
           ConnectionMode.values.where((e) => e.name == j['mode']).firstOrNull ??
@@ -272,6 +344,11 @@ class AppSettings {
       startMinimized: j['startMinimized'] is bool
           ? j['startMinimized'] as bool
           : false,
+      splitTunneling: rawSplitTunneling is Map
+          ? SplitTunnelSettings.fromJson(
+              Map<String, dynamic>.from(rawSplitTunneling),
+            )
+          : null,
     );
     if (settings.enabledProtocolCount == 0) {
       settings.enabledProtocols['vless'] = true;

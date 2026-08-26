@@ -36,14 +36,25 @@ class SingBoxEngine {
     throw StateError('sing-box.exe is missing from the core folder');
   }
 
-  Future<void> start(VpnNode node, ConnectionMode mode) async {
+  Future<void> start(
+    VpnNode node,
+    ConnectionMode mode, {
+    SplitTunnelSettings? splitTunneling,
+  }) async {
     await stop();
     proxyPort = await _findFreePort();
     final config = File(
       '${storage.root.path}${Platform.pathSeparator}active-config.json',
     );
     await config.writeAsString(
-      jsonEncode(configBuilder.build(node, mode, proxyPort: proxyPort)),
+      jsonEncode(
+        configBuilder.build(
+          node,
+          mode,
+          proxyPort: proxyPort,
+          splitTunneling: splitTunneling,
+        ),
+      ),
       flush: true,
     );
     final binary = await binaryPath;
@@ -82,7 +93,9 @@ class SingBoxEngine {
       throw StateError('sing-box stopped during startup$detail');
     }
     activeMode = mode;
-    if (mode == ConnectionMode.systemProxy) await _setSystemProxy(true);
+    if (mode == ConnectionMode.systemProxy) {
+      await _setSystemProxy(true, splitTunneling: splitTunneling);
+    }
   }
 
   Future<void> stop() async {
@@ -186,7 +199,10 @@ class SingBoxEngine {
     }
   }
 
-  Future<void> _setSystemProxy(bool enabled) async {
+  Future<void> _setSystemProxy(
+    bool enabled, {
+    SplitTunnelSettings? splitTunneling,
+  }) async {
     const key =
         r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings';
     if (enabled) {
@@ -209,7 +225,7 @@ class SingBoxEngine {
         '/t',
         'REG_SZ',
         '/d',
-        '<local>',
+        buildSystemProxyOverride(splitTunneling),
         '/f',
       ]);
     }
@@ -225,4 +241,27 @@ class SingBoxEngine {
       '/f',
     ]);
   }
+}
+
+String buildSystemProxyOverride(SplitTunnelSettings? split) {
+  final overrides = <String>['<local>'];
+  if (split?.enabled == true && split?.mode == SplitTunnelMode.bypass) {
+    for (final value in split!.domains) {
+      final domain = _normalizeSystemProxyDomain(value);
+      if (domain.isEmpty) continue;
+      overrides
+        ..add(domain)
+        ..add('*.$domain');
+    }
+  }
+  return overrides.join(';');
+}
+
+String _normalizeSystemProxyDomain(String value) {
+  var domain = value.trim().toLowerCase();
+  if (domain.startsWith('*.')) domain = domain.substring(2);
+  if (domain.startsWith('https://')) domain = domain.substring(8);
+  if (domain.startsWith('http://')) domain = domain.substring(7);
+  domain = domain.split('/').first.split(':').first;
+  return domain.endsWith('.') ? domain.substring(0, domain.length - 1) : domain;
 }
