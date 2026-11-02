@@ -31,17 +31,20 @@ class SplitTunnelApp {
     required this.path,
     this.enabled = true,
     this.isDirectory = false,
+    this.isAndroidPackage = false,
   });
   final String name;
   final String path;
   bool enabled;
   final bool isDirectory;
+  final bool isAndroidPackage;
 
   Map<String, dynamic> toJson() => {
     'name': name,
     'path': path,
     'enabled': enabled,
     'isDirectory': isDirectory,
+    'isAndroidPackage': isAndroidPackage,
   };
 
   factory SplitTunnelApp.fromJson(Map<String, dynamic> json) => SplitTunnelApp(
@@ -50,6 +53,9 @@ class SplitTunnelApp {
     enabled: json['enabled'] is bool ? json['enabled'] as bool : true,
     isDirectory: json['isDirectory'] is bool
         ? json['isDirectory'] as bool
+        : false,
+    isAndroidPackage: json['isAndroidPackage'] is bool
+        ? json['isAndroidPackage'] as bool
         : false,
   );
 }

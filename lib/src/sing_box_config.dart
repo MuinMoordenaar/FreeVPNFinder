@@ -34,16 +34,16 @@ class SingBoxConfigBuilder {
       if (splitEnabled) {'type': 'direct', 'tag': 'direct'},
     ];
     final routeRules = <Map<String, dynamic>>[];
+    if (tunEnabled) {
+      routeRules.add({
+        'protocol': ['dns'],
+        'action': 'hijack-dns',
+      });
+    }
     if (splitEnabled && split != null) {
       // Keep these as non-final actions so the following rules can use the
       // sniffed domain and the Windows process path.
       routeRules.add({'action': 'sniff'});
-      if (tunEnabled) {
-        routeRules.add({
-          'protocol': ['dns'],
-          'action': 'hijack-dns',
-        });
-      }
       final target = split.mode == SplitTunnelMode.bypass
           ? 'direct'
           : 'selected';
@@ -59,6 +59,9 @@ class SingBoxConfigBuilder {
         }
       }
       for (final app in split.applications.where((app) => app.enabled)) {
+        // Android applies application rules at the VpnService layer. The
+        // package names must not be emitted as Windows process rules.
+        if (app.isAndroidPackage) continue;
         final path = app.path.trim();
         if (path.isNotEmpty) {
           routeRules.add({
@@ -74,7 +77,7 @@ class SingBoxConfigBuilder {
       'log': {'level': 'info', 'timestamp': true},
       'inbounds': inbounds,
       'outbounds': outbounds,
-      if (tunEnabled && splitEnabled)
+      if (tunEnabled)
         'dns': {
           'servers': [
             {
@@ -88,7 +91,7 @@ class SingBoxConfigBuilder {
           'final': 'remote-dns',
         },
       'route': {
-        if (splitEnabled && routeRules.isNotEmpty) 'rules': routeRules,
+        if (routeRules.isNotEmpty) 'rules': routeRules,
         // Prevent the VPN server and direct exceptions from being routed
         // back into the TUN interface on Windows.
         if (tunEnabled) 'auto_detect_interface': true,
@@ -96,6 +99,37 @@ class SingBoxConfigBuilder {
             ? 'direct'
             : 'selected',
       },
+    };
+  }
+
+  Map<String, dynamic> buildProbeBatch(
+    List<VpnNode> nodes, {
+    int basePort = 22000,
+  }) {
+    if (nodes.isEmpty) throw ArgumentError.value(nodes, 'nodes');
+    final inbounds = <Map<String, dynamic>>[];
+    final outbounds = <Map<String, dynamic>>[];
+    final rules = <Map<String, dynamic>>[];
+    for (var index = 0; index < nodes.length; index++) {
+      final inboundTag = 'probe-in-$index';
+      final outboundTag = 'probe-out-$index';
+      inbounds.add({
+        'type': 'mixed',
+        'tag': inboundTag,
+        'listen': '127.0.0.1',
+        'listen_port': basePort + index,
+      });
+      outbounds.add(_outbound(nodes[index], tag: outboundTag));
+      rules.add({
+        'inbound': [inboundTag],
+        'outbound': outboundTag,
+      });
+    }
+    return {
+      'log': {'level': 'warning', 'timestamp': true},
+      'inbounds': inbounds,
+      'outbounds': outbounds,
+      'route': {'rules': rules, 'final': outbounds.first['tag']},
     };
   }
 
@@ -119,11 +153,11 @@ class SingBoxConfigBuilder {
     return '(?i)^$escaped\\\\(?:[^\\\\]+\\\\)*[^\\\\]+\\.exe\$';
   }
 
-  Map<String, dynamic> _outbound(VpnNode n) {
+  Map<String, dynamic> _outbound(VpnNode n, {String tag = 'selected'}) {
     final q = n.options;
     final base = <String, dynamic>{
       'type': n.protocol,
-      'tag': 'selected',
+      'tag': tag,
       'server': n.host,
       'server_port': n.port,
     };

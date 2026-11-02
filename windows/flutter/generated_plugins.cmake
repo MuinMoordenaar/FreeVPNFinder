@@ -3,8 +3,11 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  flutter_sing_box
+  mmkv_win32
   screen_retriever_windows
   tray_manager
+  url_launcher_windows
   window_manager
 )
 

@@ -1,3 +1,5 @@
+import 'dart:isolate';
+
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
@@ -42,10 +44,20 @@ class SourceRepository {
       }
     } catch (_) {}
     body ??= await storage.readSourceCache(source.id);
-    return body == null ? const [] : parser.parseSubscription(body, source.id);
+    final subscription = body;
+    if (subscription == null) return const [];
+    final sourceId = source.id;
+    return Isolate.run(
+      () => NodeParser().parseSubscription(subscription, sourceId),
+    );
   }
 
   List<VpnNode> deduplicate(
+    Iterable<VpnNode> incoming,
+    Iterable<VpnNode> history,
+  ) => mergeNodes(incoming, history);
+
+  static List<VpnNode> mergeNodes(
     Iterable<VpnNode> incoming,
     Iterable<VpnNode> history,
   ) {

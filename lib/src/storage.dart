@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -8,6 +9,9 @@ import 'models.dart';
 
 class LocalStorage {
   late final Directory root, cache, logs;
+  Future<void> _writeTail = Future<void>.value();
+  Future<void> _poolWriteTail = Future<void>.value();
+  Future<void> _logTail = Future<void>.value();
 
   Future<void> initialize() async {
     final base = await getApplicationSupportDirectory();
@@ -28,19 +32,41 @@ class LocalStorage {
     }
   }
 
-  Future<void> _write(String name, Object value) async {
-    final target = File('${root.path}${Platform.pathSeparator}$name');
-    final temporary = File('${target.path}.tmp');
-    await temporary.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(value),
-      flush: true,
-    );
-    if (await target.exists()) await target.delete();
-    await temporary.rename(target.path);
+  Future<void> _write(String name, Object value, {bool pool = false}) async {
+    final previous = pool ? _poolWriteTail : _writeTail;
+    final gate = Completer<void>();
+    if (pool) {
+      _poolWriteTail = gate.future;
+    } else {
+      _writeTail = gate.future;
+    }
+    try {
+      try {
+        await previous;
+      } catch (_) {
+        // A failed write must not block all subsequent saves.
+      }
+      final encoded = await Isolate.run(
+        () => const JsonEncoder.withIndent('  ').convert(value),
+      );
+      final target = File('${root.path}${Platform.pathSeparator}$name');
+      final temporary = File('${target.path}.tmp');
+      await temporary.writeAsString(encoded, flush: true);
+      if (await target.exists()) await target.delete();
+      await temporary.rename(target.path);
+    } finally {
+      gate.complete();
+    }
   }
 
-  Future<AppSettings> loadSettings() async =>
-      AppSettings.fromJson(await _read('settings.json') ?? {});
+  Future<AppSettings> loadSettings() async {
+    final data = await _read('settings.json');
+    if (data == null && Platform.isAndroid) {
+      return AppSettings(mode: ConnectionMode.vpn);
+    }
+    return AppSettings.fromJson(data ?? {});
+  }
+
   Future<void> saveSettings(AppSettings value) =>
       _write('settings.json', value.toJson());
   Future<List<VpnNode>> loadNodes() async {
@@ -62,7 +88,8 @@ class LocalStorage {
   Future<void> saveNodes(Iterable<VpnNode> value) =>
       _write('nodes.json', {'nodes': value.map((e) => e.toJson()).toList()});
 
-  Future<({String? active, List<String> backups})> loadConnectionPool() async {
+  Future<({String? active, List<String> backups, bool androidInitialPoolReady})>
+  loadConnectionPool() async {
     final data = await _read('connection_pool.json');
     return (
       active: data?['activeFingerprint'] as String?,
@@ -70,17 +97,20 @@ class LocalStorage {
         for (final value in data?['backupFingerprints'] ?? const [])
           value as String,
       ],
+      androidInitialPoolReady: data?['androidInitialPoolReady'] == true,
     );
   }
 
   Future<void> saveConnectionPool({
     required String? activeFingerprint,
     required Iterable<String> backupFingerprints,
+    bool androidInitialPoolReady = false,
   }) => _write('connection_pool.json', {
     'activeFingerprint': activeFingerprint,
-    'backupFingerprints': backupFingerprints.take(10).toList(),
+    'backupFingerprints': backupFingerprints.take(15).toList(),
+    'androidInitialPoolReady': androidInitialPoolReady,
     'updatedAt': DateTime.now().toIso8601String(),
-  });
+  }, pool: true);
   Future<List<VpnSource>?> loadSources() async {
     final data = await _read('sources.json');
     return data == null
@@ -108,14 +138,21 @@ class LocalStorage {
   }
 
   Future<void> appendLog(String message) async {
+    final previous = _logTail;
+    final gate = Completer<void>();
+    _logTail = gate.future;
     final stamp = DateTime.now();
-    final file = File(
-      '${logs.path}${Platform.pathSeparator}${stamp.toIso8601String().substring(0, 10)}.log',
-    );
-    await file.writeAsString(
-      '[${stamp.toIso8601String()}] $message\r\n',
-      mode: FileMode.append,
-      flush: true,
-    );
+    try {
+      await previous;
+      final file = File(
+        '${logs.path}${Platform.pathSeparator}${stamp.toIso8601String().substring(0, 10)}.log',
+      );
+      await file.writeAsString(
+        '[${stamp.toIso8601String()}] $message\r\n',
+        mode: FileMode.append,
+      );
+    } finally {
+      gate.complete();
+    }
   }
 }

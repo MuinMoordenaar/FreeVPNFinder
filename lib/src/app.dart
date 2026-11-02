@@ -1,9 +1,9 @@
-import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' show pi, sin;
 
-import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'controller.dart';
@@ -13,9 +13,7 @@ const bg = Color(0xFF090C12),
     panel = Color(0xFF151517),
     blue = Color(0xFFF2F2F2),
     cyan = Color(0xFFB8B8BC);
-const appVersion = '1.3.3';
-const latestReleaseApi =
-    'https://api.github.com/repos/MuinMoordenaar/FreeVPNFinder/releases/latest';
+const appVersion = '1.5.4';
 
 class FreeVpnFinderApp extends StatelessWidget {
   const FreeVpnFinderApp({super.key, required this.controller});
@@ -71,7 +69,7 @@ class Dashboard extends StatefulWidget {
   State<Dashboard> createState() => _DashboardState();
 }
 
-class _DashboardState extends State<Dashboard> {
+class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   int page = 0;
   static const nav = [
     (3, Icons.tune_rounded, 'Settings'),
@@ -80,11 +78,107 @@ class _DashboardState extends State<Dashboard> {
     (5, Icons.alt_route_rounded, 'Split Tunneling'),
     (4, Icons.terminal_rounded, 'Logs'),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && Platform.isAndroid) {
+      unawaited(widget.controller.syncAndroidServiceState());
+    }
+  }
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: widget.controller,
     builder: (_, __) {
       final c = widget.controller;
+      if (Platform.isAndroid) {
+        return Scaffold(
+          appBar: AppBar(
+            title: const Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text('Free VPN Finder'),
+                SizedBox(width: 8),
+                Text(
+                  'v$appVersion',
+                  style: TextStyle(fontSize: 12, color: Colors.white38),
+                ),
+              ],
+            ),
+            backgroundColor: bg,
+          ),
+          drawer: Drawer(
+            backgroundColor: const Color(0xFF111113),
+            child: SafeArea(
+              child: ListView(
+                padding: const EdgeInsets.all(12),
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(13, 12, 13, 18),
+                    child: Text(
+                      'Free VPN Finder',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  _NavItem(
+                    icon: Icons.shield_rounded,
+                    label: 'Connect',
+                    selected: page == 0,
+                    onTap: () {
+                      setState(() => page = 0);
+                      Navigator.pop(context);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  for (var i = 0; i < nav.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: _NavItem(
+                        icon: nav[i].$2,
+                        label: nav[i].$3,
+                        selected: page == nav[i].$1,
+                        onTap: () {
+                          setState(() => page = nav[i].$1);
+                          Navigator.pop(context);
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          body: Padding(
+            padding: const EdgeInsets.all(12),
+            child: IndexedStack(
+              index: page,
+              children: [
+                _Home(c),
+                _Sources(c),
+                _Profiles(c),
+                _Settings(c),
+                _Logs(c),
+                _SplitTunneling(c),
+              ],
+            ),
+          ),
+        );
+      }
       return Scaffold(
         body: DecoratedBox(
           decoration: const BoxDecoration(color: bg),
@@ -189,255 +283,412 @@ class _DashboardState extends State<Dashboard> {
   );
 }
 
-class _Home extends StatefulWidget {
+class _Home extends StatelessWidget {
   const _Home(this.c);
   final AppController c;
 
   @override
-  State<_Home> createState() => _HomeState();
-}
-
-class _HomeState extends State<_Home> {
-  String updateLabel = 'Checking for updates...';
-  String? updateUrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadUpdateStatus();
-  }
-
-  Future<void> _loadUpdateStatus() async {
-    final update = await _fetchLatestUpdate();
-    if (!mounted) return;
-    setState(() {
-      updateUrl = update?.url;
-      updateLabel = update == null
-          ? 'You have the latest version installed'
-          : 'Update to the latest version';
-    });
-  }
-
-  Future<void> _openUpdate() async {
-    if (updateUrl == null) {
-      await _loadUpdateStatus();
-      return;
-    }
-    await Process.start('explorer.exe', [updateUrl!]);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final c = widget.c;
-    final busy = !{
-      AppPhase.disconnected,
-      AppPhase.connected,
-      AppPhase.degraded,
-      AppPhase.error,
-    }.contains(c.phase);
+    final c = this.c;
     final active = c.connected;
+    final busy = c.connectionBusy;
+    final narrow = MediaQuery.sizeOf(context).width < 700;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 8),
-          child: Row(
-            children: [
-              const Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Text(
-                    'Free VPN Finder',
-                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700),
-                  ),
-                  SizedBox(width: 10),
-                  Text(
-                    'v$appVersion',
-                    style: TextStyle(fontSize: 14, color: Colors.white38),
-                  ),
-                ],
-              ),
-              const Spacer(),
-              DropdownButtonHideUnderline(
-                child: DropdownButton<ConnectionMode>(
-                  value: c.settings.mode,
-                  borderRadius: BorderRadius.circular(10),
-                  dropdownColor: const Color(0xFF1B1B1E),
-                  items: [
-                    for (final m in ConnectionMode.values)
-                      DropdownMenuItem(value: m, child: Text(m.label)),
+          child: narrow
+              ? _ModeDropdown(c: c, busy: busy)
+              : Row(
+                  children: [
+                    const Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(
+                          'Free VPN Finder',
+                          style: TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        SizedBox(width: 10),
+                        Text(
+                          'v$appVersion',
+                          style: TextStyle(fontSize: 14, color: Colors.white38),
+                        ),
+                      ],
+                    ),
+                    const Spacer(),
+                    _ModeDropdown(c: c, busy: busy),
                   ],
-                  onChanged: busy
-                      ? null
-                      : (m) {
-                          if (m != null) c.changeMode(m);
-                        },
                 ),
-              ),
-            ],
-          ),
         ),
         const SizedBox(height: 18),
         Expanded(
-          child: Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
+          child: LayoutBuilder(
+            builder: (_, constraints) {
+              if (constraints.maxWidth < 700) {
+                return _MobileHomeBody(c: c, active: active, busy: busy);
+              }
+              return Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _ConnectButton(
+                              active: active,
+                              busy: busy,
+                              error: c.phase == AppPhase.error,
+                              onTap: c.toggleConnection,
+                            ),
+                            const SizedBox(height: 20),
+                            Text(
+                              c.status.toUpperCase(),
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                letterSpacing: 1.8,
+                                fontWeight: FontWeight.w700,
+                                color: active
+                                    ? Colors.white
+                                    : busy
+                                    ? cyan
+                                    : c.phase == AppPhase.error
+                                    ? const Color(0xFFB8B8BC)
+                                    : Colors.white70,
+                              ),
+                            ),
+                            const SizedBox(height: 9),
+                            Text(
+                              c.activeNode?.name ??
+                                  (busy
+                                      ? Platform.isAndroid &&
+                                                c.androidSearchActive
+                                            ? 'Preparing backups'
+                                            : 'Testing node ${c.tested}'
+                                      : ''),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              c.activeNode == null
+                                  ? '${c.nodes.length} cached servers'
+                                  : '${c.activeNode!.protocol.toUpperCase()}  •  ${c.activeNode!.host}:${c.activeNode!.port}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white38,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    flex: 2,
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        _ConnectButton(
-                          active: active,
-                          busy: busy,
-                          error: c.phase == AppPhase.error,
-                          onTap: c.toggleConnection,
-                        ),
-                        const SizedBox(height: 20),
-                        Text(
-                          c.status.toUpperCase(),
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            letterSpacing: 1.8,
-                            fontWeight: FontWeight.w700,
-                            color: active
-                                ? Colors.white
-                                : busy
-                                ? cyan
-                                : c.phase == AppPhase.error
-                                ? const Color(0xFFB8B8BC)
-                                : Colors.white70,
+                        SizedBox(
+                          height: 154,
+                          child: _InfoCard(
+                            title: 'CONNECTION',
+                            icon: Icons.speed_rounded,
+                            children: [
+                              _Stat(
+                                label: 'Latency',
+                                value: c.activeNode?.latency == null
+                                    ? '—'
+                                    : '${c.activeNode!.latency} ms',
+                              ),
+                              _Stat(
+                                label: 'Protocol',
+                                value:
+                                    c.activeNode?.protocol.toUpperCase() ?? '—',
+                              ),
+                              _Stat(
+                                label: 'Mode',
+                                value: c.settings.mode.label,
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 9),
-                        Text(
-                          c.activeNode?.name ??
-                              (busy ? 'Testing node ${c.tested}' : ''),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          c.activeNode == null
-                              ? '${c.nodes.length} cached servers'
-                              : '${c.activeNode!.protocol.toUpperCase()}  •  ${c.activeNode!.host}:${c.activeNode!.port}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white38,
-                            fontSize: 12,
+                        const SizedBox(height: 14),
+                        Expanded(
+                          child: _InfoCard(
+                            title: 'FAILOVER',
+                            icon: Icons.swap_horiz_rounded,
+                            children: [
+                              _Stat(
+                                label: 'Backup nodes',
+                                value:
+                                    '${c.backups.length} / ${c.settings.backupPoolSize}',
+                              ),
+                              const SizedBox(height: 2),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.icon(
+                                  onPressed: active && c.backups.isNotEmpty
+                                      ? c.manualSwitch
+                                      : null,
+                                  icon: const Icon(
+                                    Icons.shuffle_rounded,
+                                    size: 18,
+                                  ),
+                                  label: const Text('Switch server'),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Expanded(
+                                child: c.backups.isEmpty
+                                    ? const Center(
+                                        child: Text(
+                                          'Backup nodes are being prepared',
+                                          style: TextStyle(
+                                            color: Colors.white38,
+                                          ),
+                                        ),
+                                      )
+                                    : ListView.separated(
+                                        itemCount: c.backups.length,
+                                        separatorBuilder: (_, _) =>
+                                            const Divider(height: 1),
+                                        itemBuilder: (_, index) {
+                                          final node = c.backups[index];
+                                          return _BackupNode(
+                                            node: node,
+                                            enabled: active,
+                                            onConnect: () =>
+                                                c.connectToBackup(node),
+                                          );
+                                        },
+                                      ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                flex: 2,
-                child: Column(
-                  children: [
-                    SizedBox(
-                      height: 154,
-                      child: _InfoCard(
-                        title: 'CONNECTION',
-                        icon: Icons.speed_rounded,
-                        children: [
-                          _Stat(
-                            label: 'Latency',
-                            value: c.activeNode?.latency == null
-                                ? '—'
-                                : '${c.activeNode!.latency} ms',
-                          ),
-                          _Stat(
-                            label: 'Protocol',
-                            value: c.activeNode?.protocol.toUpperCase() ?? '—',
-                          ),
-                          _Stat(label: 'Mode', value: c.settings.mode.label),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Expanded(
-                      child: _InfoCard(
-                        title: 'FAILOVER',
-                        icon: Icons.swap_horiz_rounded,
-                        children: [
-                          _Stat(
-                            label: 'Backup nodes',
-                            value:
-                                '${c.backups.length} / ${c.settings.backupPoolSize}',
-                          ),
-                          const SizedBox(height: 2),
-                          SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.icon(
-                              onPressed: active && c.backups.isNotEmpty
-                                  ? c.manualSwitch
-                                  : null,
-                              icon: const Icon(Icons.shuffle_rounded, size: 18),
-                              label: const Text('Switch server'),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Expanded(
-                            child: c.backups.isEmpty
-                                ? const Center(
-                                    child: Text(
-                                      'Backup nodes are being prepared',
-                                      style: TextStyle(color: Colors.white38),
-                                    ),
-                                  )
-                                : ListView.separated(
-                                    itemCount: c.backups.length,
-                                    separatorBuilder: (_, _) =>
-                                        const Divider(height: 1),
-                                    itemBuilder: (_, index) {
-                                      final node = c.backups[index];
-                                      return _BackupNode(
-                                        node: node,
-                                        enabled: active,
-                                        onConnect: () =>
-                                            c.connectToBackup(node),
-                                      );
-                                    },
-                                  ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed:
-                            updateUrl == null &&
-                                updateLabel != 'Checking for updates...'
-                            ? _openUpdate
-                            : updateUrl != null
-                            ? _openUpdate
-                            : null,
-                        icon: const Icon(Icons.system_update_alt_rounded),
-                        label: Text(updateLabel),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+                ],
+              );
+            },
           ),
         ),
       ],
     );
   }
+}
+
+class _MobileHomeBody extends StatelessWidget {
+  const _MobileHomeBody({
+    required this.c,
+    required this.active,
+    required this.busy,
+  });
+  final AppController c;
+  final bool active, busy;
+
+  @override
+  Widget build(BuildContext context) => ListView(
+    padding: EdgeInsets.zero,
+    children: [
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Column(
+            children: [
+              _ConnectButton(
+                active: active,
+                busy: busy,
+                error: c.phase == AppPhase.error,
+                onTap: c.toggleConnection,
+              ),
+              const SizedBox(height: 18),
+              Text(
+                c.status.toUpperCase(),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  letterSpacing: 1.5,
+                  fontWeight: FontWeight.w700,
+                  color: active ? Colors.white : cyan,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                c.activeNode?.name ??
+                    (busy
+                        ? Platform.isAndroid && c.androidSearchActive
+                              ? 'Preparing backups'
+                              : 'Testing node ${c.tested}'
+                        : ''),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                c.activeNode == null
+                    ? '${c.nodes.length} cached servers'
+                    : '${c.activeNode!.protocol.toUpperCase()} • ${c.activeNode!.host}:${c.activeNode!.port}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white38, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
+      if (Platform.isAndroid) ...[
+        Builder(
+          builder: (context) {
+            final searchActive = c.androidSearchActive;
+            final searchRunning = c.androidSearchRunning;
+            final searchBusy = searchActive || searchRunning;
+            return Column(
+              children: [
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    children: [
+                      FilledButton.icon(
+                        onPressed: searchBusy
+                            ? null
+                            : c.startAndroidServerSearch,
+                        icon: Icon(
+                          searchActive
+                              ? Icons.radar_rounded
+                              : searchRunning
+                              ? Icons.hourglass_top_rounded
+                              : Icons.ondemand_video_rounded,
+                        ),
+                        label: Text(
+                          searchActive
+                              ? 'Finding Servers • ${c.androidSearchCountdown}'
+                              : searchRunning
+                              ? 'Finishing Search…'
+                              : 'Find New Servers',
+                        ),
+                      ),
+                      if (c.androidSearchProgress.isNotEmpty) ...[
+                        const SizedBox(height: 5),
+                        Text(
+                          c.androidSearchProgress,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white38,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+      const SizedBox(height: 12),
+      _InfoCard(
+        title: 'CONNECTION',
+        icon: Icons.speed_rounded,
+        children: [
+          _Stat(
+            label: 'Latency',
+            value: c.activeNode?.latency == null
+                ? '—'
+                : '${c.activeNode!.latency} ms',
+          ),
+          _Stat(
+            label: 'Protocol',
+            value: c.activeNode?.protocol.toUpperCase() ?? '—',
+          ),
+          _Stat(label: 'Mode', value: c.settings.mode.label),
+        ],
+      ),
+      const SizedBox(height: 12),
+      _InfoCard(
+        title: 'FAILOVER',
+        icon: Icons.swap_horiz_rounded,
+        children: [
+          _Stat(
+            label: 'Backup nodes',
+            value: '${c.backups.length} / ${c.settings.backupPoolSize}',
+          ),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: active && c.backups.isNotEmpty ? c.manualSwitch : null,
+              icon: const Icon(Icons.shuffle_rounded, size: 18),
+              label: const Text('Switch server'),
+            ),
+          ),
+          if (c.backups.isNotEmpty)
+            for (final node in c.backups.take(3))
+              _BackupNode(
+                node: node,
+                enabled: active,
+                onConnect: () => c.connectToBackup(node),
+              )
+          else
+            const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: Text(
+                'Backup nodes are being prepared',
+                style: TextStyle(color: Colors.white38),
+              ),
+            ),
+        ],
+      ),
+      const SizedBox(height: 12),
+    ],
+  );
+}
+
+class _ModeDropdown extends StatelessWidget {
+  const _ModeDropdown({required this.c, required this.busy});
+  final AppController c;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: DropdownButtonHideUnderline(
+      child: DropdownButton<ConnectionMode>(
+        value: c.settings.mode,
+        borderRadius: BorderRadius.circular(10),
+        dropdownColor: const Color(0xFF1B1B1E),
+        items: [
+          for (final mode in ConnectionMode.values)
+            DropdownMenuItem(value: mode, child: Text(mode.label)),
+        ],
+        onChanged: busy
+            ? null
+            : (mode) {
+                if (mode != null) c.changeMode(mode);
+              },
+      ),
+    ),
+  );
 }
 
 class _Sources extends StatelessWidget {
@@ -540,49 +791,6 @@ class _ProfilesState extends State<_Profiles> {
       ],
     ),
   );
-}
-
-class _UpdateLink {
-  const _UpdateLink(this.url);
-  final String url;
-}
-
-Future<_UpdateLink?> _fetchLatestUpdate() async {
-  try {
-    final response = await http
-        .get(
-          Uri.parse(latestReleaseApi),
-          headers: {'Accept': 'application/vnd.github+json'},
-        )
-        .timeout(const Duration(seconds: 10));
-    if (response.statusCode != 200) throw Exception('GitHub error');
-    final release = jsonDecode(response.body) as Map<String, dynamic>;
-    final latest = (release['tag_name'] as String? ?? '').replaceFirst('v', '');
-    final assets = (release['assets'] as List<dynamic>? ?? const []);
-    final zip = assets.cast<Map<String, dynamic>>().firstWhere(
-      (asset) =>
-          (asset['name'] as String? ?? '').toLowerCase().endsWith('.zip'),
-      orElse: () => <String, dynamic>{},
-    );
-    if (latest.isEmpty || _compareVersions(latest, appVersion) <= 0)
-      return null;
-    final url = zip['browser_download_url'];
-    if (url is! String) throw Exception('ZIP asset is missing');
-    return _UpdateLink(url);
-  } catch (_) {
-    return null;
-  }
-}
-
-int _compareVersions(String a, String b) {
-  final left = a.split('.').map((part) => int.tryParse(part) ?? 0).toList();
-  final right = b.split('.').map((part) => int.tryParse(part) ?? 0).toList();
-  for (var i = 0; i < 3; i++) {
-    final difference =
-        (i < left.length ? left[i] : 0) - (i < right.length ? right[i] : 0);
-    if (difference != 0) return difference.sign;
-  }
-  return 0;
 }
 
 class _Settings extends StatelessWidget {
@@ -784,6 +992,82 @@ class _SplitTunnelingState extends State<_SplitTunneling> {
     }
   }
 
+  Future<void> _pickAndroidApp() async {
+    try {
+      final raw = await const MethodChannel('free_vpn_finder/android')
+          .invokeMethod<List<dynamic>>('listApplications');
+      final apps = [
+        for (final item in raw ?? const [])
+          if (item is Map)
+            {
+              'label': '${item['label'] ?? item['packageName']}',
+              'packageName': '${item['packageName'] ?? ''}',
+            },
+      ].where((app) => app['packageName']!.isNotEmpty).toList();
+      if (!mounted) return;
+      final selected = await showModalBottomSheet<Map<String, String>>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: panel,
+        builder: (context) {
+          var query = '';
+          return StatefulBuilder(
+            builder: (context, setSheetState) {
+              final filtered = apps.where((app) {
+                final text = '${app['label']} ${app['packageName']}'
+                    .toLowerCase();
+                return text.contains(query.toLowerCase());
+              }).toList();
+              return SafeArea(
+                child: SizedBox(
+                  height: MediaQuery.sizeOf(context).height * .82,
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: TextField(
+                          autofocus: true,
+                          decoration: const InputDecoration(
+                            hintText: 'Search applications',
+                            prefixIcon: Icon(Icons.search),
+                          ),
+                          onChanged: (value) =>
+                              setSheetState(() => query = value),
+                        ),
+                      ),
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: filtered.length,
+                          itemBuilder: (_, index) {
+                            final app = filtered[index];
+                            return ListTile(
+                              leading: const Icon(Icons.android, color: cyan),
+                              title: Text(app['label']!),
+                              subtitle: Text(app['packageName']!),
+                              onTap: () => Navigator.pop(context, app),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+      if (selected == null) return;
+      await widget.c.addSplitAndroidApp(
+        selected['label']!,
+        selected['packageName']!,
+      );
+      if (mounted) setState(() => message = 'Application added');
+    } catch (e) {
+      if (mounted) setState(() => message = '$e');
+    }
+  }
+
   Future<void> _browseFolder() async {
     if (!Platform.isWindows) return;
     const script =
@@ -832,9 +1116,12 @@ class _SplitTunnelingState extends State<_SplitTunneling> {
   @override
   Widget build(BuildContext context) {
     final split = widget.c.settings.splitTunneling;
+    final android = Platform.isAndroid;
     return _Page(
       title: 'Split Tunneling',
-      subtitle: 'Choose applications, folders and websites for the VPN',
+      subtitle: android
+          ? 'Choose Android applications and websites for the VPN'
+          : 'Choose applications, folders and websites for the VPN',
       child: ListView(
         children: [
           Card(
@@ -843,7 +1130,7 @@ class _SplitTunnelingState extends State<_SplitTunneling> {
                 SwitchListTile(
                   title: const Text('Enable split tunneling'),
                   subtitle: const Text(
-                    'Application, folder and website rules work in every connection mode',
+                    'Application and website rules work in every connection mode',
                   ),
                   value: split.enabled,
                   onChanged: (value) {
@@ -881,23 +1168,29 @@ class _SplitTunnelingState extends State<_SplitTunneling> {
           ),
           const SizedBox(height: 12),
           _SplitListCard(
-            title: 'Applications and folders',
+            title: android ? 'Applications' : 'Applications and folders',
             icon: Icons.apps_rounded,
-            empty: 'No applications or folders added',
+            empty: android
+                ? 'No applications added'
+                : 'No applications or folders added',
             hasItems: split.applications.isNotEmpty,
             children: [
               for (var i = 0; i < split.applications.length; i++)
                 ListTile(
                   dense: true,
                   leading: Icon(
-                    split.applications[i].isDirectory
+                    split.applications[i].isAndroidPackage
+                        ? Icons.android
+                        : split.applications[i].isDirectory
                         ? Icons.folder_rounded
                         : Icons.window_rounded,
                     color: cyan,
                   ),
                   title: Text(split.applications[i].name),
                   subtitle: Text(
-                    split.applications[i].isDirectory
+                    split.applications[i].isAndroidPackage
+                        ? split.applications[i].path
+                        : split.applications[i].isDirectory
                         ? '${split.applications[i].path} (including subfolders)'
                         : split.applications[i].path,
                   ),
@@ -906,45 +1199,58 @@ class _SplitTunnelingState extends State<_SplitTunneling> {
                     onPressed: () => widget.c.removeSplitApp(i),
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: appPath,
-                        decoration: const InputDecoration(
-                          hintText: r'C:\Path\Application.exe or folder',
+              if (android)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _pickAndroidApp,
+                      icon: const Icon(Icons.android),
+                      label: const Text('Choose application'),
+                    ),
+                  ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: appPath,
+                          decoration: const InputDecoration(
+                            hintText: r'C:\Path\Application.exe or folder',
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Tooltip(
-                      message: 'Choose application',
-                      child: IconButton(
-                        onPressed: _browseApp,
-                        icon: const Icon(Icons.app_registration_rounded),
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: 'Choose application',
+                        child: IconButton(
+                          onPressed: _browseApp,
+                          icon: const Icon(Icons.app_registration_rounded),
+                        ),
                       ),
-                    ),
-                    Tooltip(
-                      message: 'Choose folder',
-                      child: IconButton(
-                        onPressed: _browseFolder,
-                        icon: const Icon(Icons.folder_open),
+                      Tooltip(
+                        message: 'Choose folder',
+                        child: IconButton(
+                          onPressed: _browseFolder,
+                          icon: const Icon(Icons.folder_open),
+                        ),
                       ),
-                    ),
-                    FilledButton(
-                      onPressed: _addApp,
-                      child: const Text('Add App'),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: _addFolder,
-                      child: const Text('Add Folder'),
-                    ),
-                  ],
+                      FilledButton(
+                        onPressed: _addApp,
+                        child: const Text('Add App'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: _addFolder,
+                        child: const Text('Add Folder'),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -967,23 +1273,42 @@ class _SplitTunnelingState extends State<_SplitTunneling> {
                 ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: domain,
-                        decoration: const InputDecoration(
-                          hintText: 'youtube.com',
-                        ),
+                child: android
+                    ? Column(
+                        children: [
+                          TextField(
+                            controller: domain,
+                            decoration: const InputDecoration(
+                              hintText: 'youtube.com',
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              onPressed: _addDomain,
+                              child: const Text('Add Website'),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: domain,
+                              decoration: const InputDecoration(
+                                hintText: 'youtube.com',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton(
+                            onPressed: _addDomain,
+                            child: const Text('Add Website'),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: _addDomain,
-                      child: const Text('Add Website'),
-                    ),
-                  ],
-                ),
               ),
             ],
           ),
@@ -1087,9 +1412,10 @@ class _Page extends StatelessWidget {
     children: [
       Padding(
         padding: const EdgeInsets.only(left: 8),
-        child: Row(
-          children: [
-            Column(
+        child: LayoutBuilder(
+          builder: (_, constraints) {
+            final narrow = constraints.maxWidth < 600;
+            final heading = Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -1102,10 +1428,17 @@ class _Page extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(subtitle, style: const TextStyle(color: Colors.white38)),
               ],
-            ),
-            const Spacer(),
-            if (action != null) action!,
-          ],
+            );
+            if (narrow && action != null) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [heading, const SizedBox(height: 8), action!],
+              );
+            }
+            return Row(
+              children: [heading, const Spacer(), if (action != null) action!],
+            );
+          },
         ),
       ),
       const SizedBox(height: 18),
@@ -1280,9 +1613,11 @@ class _Stat extends StatelessWidget {
           style: const TextStyle(color: Colors.white38, fontSize: 12),
         ),
         const Spacer(),
-        Flexible(
+        SizedBox(
+          width: 120,
           child: Text(
             value,
+            textAlign: TextAlign.left,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
           ),
